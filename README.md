@@ -339,7 +339,5 @@ Eigener Code unter **GPLv3**.
 
 Fremde Bestandteile behalten ihre Lizenzen:
 
-- `lb_emoji_28.c` — SIL Open Font License 1.1, siehe `fonts/`
+- `lb_emoji_28.c` — SIL Open Font License 1.1, siehe `OFL.txt`
 - `src/touch/esp_lcd_touch.*` — Apache-2.0 (Espressif)
-- übrige Waveshare-Dateien — keine Lizenzangabe im Original, deshalb
-  nicht in diesem Repo enthalten
