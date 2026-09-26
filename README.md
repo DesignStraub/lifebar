@@ -3,26 +3,26 @@
 Ein eigenständiges Gerät, das aus deiner Zeitverwendung eine Identität
 ableitet und sie dir auf den Schreibtisch stellt.
 
-Kein Habit-Tracker im üblichen Sinn. Die Idee kam von den
-Ressourcenleisten aus Strategiespielen: eine schmale Anzeige, die immer
-sichtbar ist und auf einen Blick zeigt, wie man steht. Habit-Tracker als
-Software gibt es hunderte — der Unterschied liegt im Objekt, das
-dasteht und sich nicht wegwischen lässt.
+Die Idee kam von den Ressourcenleisten aus Strategiespielen: eine
+schmale Anzeige, die immer sichtbar ist und auf einen Blick zeigt, wie
+man steht. Habit-Tracker als Software gibt es hunderte — der
+Unterschied liegt im Objekt, das dasteht und sich nicht wegwischen
+lässt.
 
 Alle Daten bleiben auf dem Gerät. Kein Account, keine Cloud.
 
 ---
 
-## Was es tut
+## Funktionen
 
 - **Bis zu 6 Skills** aus 18 Vorlagen, gebucht in Halbstundenschritten
-- **Bis zu 6 Laster** aus 12 Detox-Kategorien, gezählt als Vorkommnisse
+- **Bis zu 6 Laster** aus 12 Kategorien, gezählt als Vorkommnisse
 - **EXP entsprechen Minuten.** Dadurch selbstkalibrierend: mehr als der
   Tag hergibt kann niemand eintragen
 - **Levelkurve ohne Maximum** — `20 + 2,6·n²` Minuten pro Stufe
-- **Verdiente Titel** statt gewählter Klassen (siehe unten)
-- **Wochenrhythmus** ab Montag 4 Uhr mit Rückblick, Wochenziel,
-  Siegeln und Bonus-EXP für Überstunden
+- **Verdiente Titel** statt gewählter Klassen
+- **Wochenrhythmus** ab Montag 4 Uhr mit Rückblick, Wochenziel, Siegeln
+  und Bonus-EXP für Überstunden
 - **Lockscreen** mit Uhrzeit, Level und Titel
 - **Nachtmodus** mit wärmeren Farben, vierstufige Helligkeit
 - **Deutsch und Englisch**, 12- und 24-Stunden-Format
@@ -43,43 +43,37 @@ Das Level schaltet Bausteine frei, die Woche füllt sie.
 Nomen und Bestimmungswort kommen aus den **Gesamtminuten** — sie
 beschreiben dich, nicht deine Woche. Das Nomen steigt mit jeder Stufe
 auf: Krieger → Berserker → Kriegsherr, Gelehrter → Magister →
-Erzgelehrter. Das Bestimmungswort stammt vom zweitstärksten Skill und
-bleibt unverändert, sofern der mindestens 25 % der Minuten des Ersten
-hat.
+Erzgelehrter. Das Bestimmungswort stammt vom zweitstärksten Skill,
+sofern der mindestens 25 % der Minuten des Ersten hat.
 
 Das Leitwort wird **beim Wochenwechsel** neu bestimmt, nach
 Auffälligkeit:
 
 1. **REFLEKTIERTER** bei mindestens 10 Laster-Einträgen in der Woche
 2. **ERGEBENER** oder **VIELSEITIGER**, gemessen relativ zur Zahl der
-   gepflegten Module (bei zwei Modulen ist 50:50 maximal breit)
+   gepflegten Module
 3. **NÄCHTLICHER / MORGENDLICHER / MITTÄGLICHER / ABENDLICHER** aus der
    dominanten Tageszeit
 
-Auf Stufe 3 sind damit über 2000 verschiedene Titel möglich. Die
-letzten 26 Wochen werden als Chronik gespeichert und im Dashboard
-angezeigt.
+Auf Stufe 3 sind über 2000 Titel möglich. Die letzten 26 Wochen werden
+als Chronik gespeichert und im Dashboard angezeigt.
 
 ## Gestaltungsprinzipien
-
-Diese Entscheidungen sind der Kern des Projekts. Wer daran dreht,
-ändert nicht Features, sondern das Verhalten des Nutzers.
 
 - **Zeit ist die einzige Währung.** Wer sich verzettelt, sieht es sofort.
 - **Laster kosten keine EXP.** Ehrlichkeit muss billig bleiben, sonst
   trägt man sie nicht ein — und dann sind die Daten wertlos. Belohnt
   wird stattdessen das regelmäßige Eintragen selbst.
-- **Das Level sinkt nie.** Aufhören zu tracken darf keinen Fortschritt
-  löschen. Abgewählte Module behalten ihre Werte und zählen weiter
-  ins Level, verschwinden aber aus der Anzeige.
+- **Das Level sinkt nie.** Abgewählte Module behalten ihre Werte und
+  zählen weiter ins Level, verschwinden aber aus der Anzeige.
 - **Keine Obergrenzen beim Nachtragen.** Abends alles eintragen ist der
   Normalfall, nicht die Ausnahme.
-- **Erst auswählen, dann buchen.** Bei 12 mm Spaltenbreite und
-  schrägem Blick auf ein flach liegendes Display kostet ein Fehltreffer
-  so einen Tap statt einer falschen Buchung.
+- **Erst auswählen, dann buchen.** Bei 12 mm Spaltenbreite kostet ein
+  Fehltreffer so einen Tap statt einer falschen Buchung.
 - **Kein Flash-Zugriff aus dem UI-Task.** Alle Schreibvorgänge laufen
-  über Flags aus `loop()`. Verstöße dagegen haben mehrere Abstürze
-  verursacht.
+  über Flags aus `loop()`.
+
+---
 
 ## Hardware
 
@@ -88,33 +82,29 @@ Diese Entscheidungen sind der Kern des Projekts. Wer daran dreht,
 - ESP32-S3R8, 16 MB Flash, 8 MB PSRAM
 - 3,49" IPS, 172 × 640, kapazitiver Touch (AXS15231B, QSPI + I2C)
 - PCF85063 RTC, QMI8658 IMU, ES8311 Audio, TF-Slot
-- Versorgung über USB-C, **ohne Akku**
+- Versorgung über USB-C; der 18650-Halter auf dem Board ist optional
+  und wird von der Firmware nicht ausgewertet
 
-Kein Akku ist Absicht: Das Display läuft dauerhaft, eine 18650 wäre
-nach etwa zehn Stunden leer, und ein Gerät, das man laden muss, landet
-in der Schublade. Für die Uhr genügt WLAN und NTP.
-
-### Achtung bei der Boardrevision
+### Boardrevision beachten
 
 Von diesem Board existieren V1 und V2. Bei V2 sind **LCD_BL und
 EXIO_INT sowie LCD_TE und LCD_RESET auf getauschten IOs**. Mit dem
 falschen Beispielcode bleibt der Bildschirm schwarz. Erkennbar am
-Rev1.1-Silkscreen bzw. dem V2-Aufkleber am Gehäuse.
+Rev1.1-Silkscreen.
 
-Als Folge davon ist die **Backlight-PWM in diesem Projekt deaktiviert**:
-`EXAMPLE_PIN_NUM_BK_LIGHT` aus dem Demo zeigt auf den V1-Pin, `setUpduty()`
-greift damit ins Leere. Die Helligkeitsregelung läuft stattdessen über
-die Farben. Wer die V2-Pinnummer aus dem Schaltplan hat, kann das mit
-einem Define wieder umstellen.
+Deshalb ist die **Backlight-PWM hier deaktiviert**:
+`EXAMPLE_PIN_NUM_BK_LIGHT` aus dem Demo zeigt auf den V1-Pin,
+`setUpduty()` greift ins Leere. Die Helligkeitsregelung läuft
+stattdessen über die Farben.
 
 ---
 
-## Bauen
+## Installation
 
 ### 1. Waveshare-Demo besorgen
 
-Nicht alle Dateien liegen in diesem Repo — siehe *Fremde Dateien*
-unten. Hol dir zuerst das Demo-Paket:
+Ein Teil der Dateien liegt nicht in diesem Repo (siehe *Fremde
+Dateien*). Hol dir zuerst das Demo-Paket:
 
 ```
 github.com/waveshareteam/ESP32-S3-Touch-LCD-3.49
@@ -141,7 +131,19 @@ In `lv_conf.h` zusätzlich aktivieren:
 #define LV_FONT_MONTSERRAT_48 1
 ```
 
-### 3. Tools-Einstellungen
+### 3. Fremde Dateien einfügen
+
+Aus `10_LVGL_V9_Test` des Demo-Pakets in den Sketch-Ordner kopieren:
+
+```
+lvgl_port.c   lvgl_port.h   i2c_bsp.c   i2c_bsp.h   user_config.h
+src/axs15231b/   src/touch/   src/lcd_bl_bsp/
+```
+
+Anschließend die Änderungen aus `docs/waveshare-patches.md` anwenden.
+Ohne sie startet die Firmware nicht oder der Touch reagiert nicht.
+
+### 4. Tools-Einstellungen
 
 | Einstellung | Wert |
 |---|---|
@@ -155,31 +157,10 @@ Das Partitionsschema ist wichtig: Das Ereignisprotokoll liegt in einer
 FAT-Partition. Ohne FATFS-Anteil meldet der Bootlog
 `[log] FEHLER: FFat nicht verfuegbar`.
 
-Die grafische Referenz für die Tools-Einstellungen liegt im Demo-Paket
-als `Tools Configuration.png`.
+Eine grafische Referenz liegt im Demo-Paket als
+`Tools Configuration.png`.
 
-### 4. Emoji-Schrift erzeugen
-
-Die Icons kommen aus einer generierten LVGL-Schrift, die aus
-Lizenzgründen nicht im Repo liegt.
-
-1. `NotoEmoji-Regular.ttf` laden — die **monochrome** Variante, nicht
-   NotoColorEmoji. Farb-Emoji kann LVGLs Schrift-Engine nicht darstellen
-2. Auf `lvgl.io/tools/fontconverter`: Name `lb_emoji_28`, Size `28`,
-   Bpp `4`, Output C file, Range leer lassen
-3. Ins Feld *Symbols*:
-
-```
-💪🏃🧘🚴🎓📖🗣💻🎸🎨✍🔨🕯🍳🌲🍻🌱🧹📱📺🎮🚬🍺☕🍬🍔🛒🔞💅🌀
-```
-
-4. Die erzeugte `lb_emoji_28.c` in den Sketch-Ordner legen
-
-Ohne diese Datei bricht der Linker mit `undefined reference to
-lb_emoji_28` ab. Alternativ `#define LB_EMOJI 0` in `ui_lifebar.h`
-setzen — dann fehlen nur die Icons.
-
-### 5. Erststart
+### 5. Hochladen und einrichten
 
 Ohne hinterlegte WLAN-Daten öffnet das Gerät einen Hotspot
 `LifeBar-XXXX`. Verbinden, das Portal springt auf, dort entweder das
@@ -241,7 +222,7 @@ Internet hat.
 ### Import- und Exportformat
 
 Schlichter Text, von Hand lesbar und editierbar. Zeilen mit `#` werden
-ignoriert.
+ignoriert. Diese Zeilen **setzen** Werte:
 
 ```
 lang=de
@@ -251,8 +232,7 @@ skill,GYM,1230
 vice,SOCIAL,12
 ```
 
-Diese Zeilen **setzen** Werte. Zum Nachtragen mit Zeitstempel gibt es
-Ereniszeilen, die **addieren**:
+Ereniszeilen **addieren** und tragen einen Zeitstempel:
 
 ```
 event,2026-08-17,19:30,skill,GYM,90
@@ -284,24 +264,17 @@ zwei Ebenen brauchen, gehört in die untere der beiden — sonst
 kompiliert es nicht. Das ist bei header-only mit `static` die häufigste
 Fehlerquelle.
 
+### Mitgeliefert
+
+`lb_emoji_28.c` — die Icons, als LVGL-Bitmapschrift aus **Noto Emoji**
+erzeugt mit dem Font Converter von `lvgl.io`. Liegt fertig im Repo.
+Lizenzhinweis in `fonts/`.
+
 ### Fremde Dateien
 
-Diese stammen aus dem Waveshare-Demo `10_LVGL_V9_Test` und liegen
-**nicht** in diesem Repo, weil dort keine Lizenz angegeben war:
-
-```
-lvgl_port.c   lvgl_port.h   i2c_bsp.c   i2c_bsp.h   user_config.h
-src/axs15231b/   src/touch/   src/lcd_bl_bsp/
-```
-
-Kopiere sie aus dem Demo-Paket in den Sketch-Ordner und wende die
-Änderungen aus `docs/waveshare-patches.md` an.
-
-### Generiert
-
-`lb_emoji_28.c` aus Noto Emoji, SIL Open Font License. Nicht im Repo;
-siehe Bauanleitung. Wer die Datei weitergibt, muss `OFL.txt`
-mitliefern.
+Die Waveshare-Dateien aus Schritt 3 liegen **nicht** im Repo, weil im
+Original keine Lizenz angegeben war. Ihre nötigen Änderungen stehen in
+`docs/waveshare-patches.md`.
 
 ---
 
@@ -319,8 +292,8 @@ Oben in `Lifebar.ino`:
 
 Dazu `UI_DEBUG` in `ui_lifebar.h` und `TOUCH_DEBUG` in `lvgl_port.c`.
 
-Die ersten drei sind kein Luxus, sondern das Werkzeug, mit dem sich das
-bekannte Touch-Problem eingrenzen lässt.
+Die ersten drei sind das Werkzeug, mit dem sich das unten beschriebene
+Touch-Problem eingrenzen lässt.
 
 ---
 
@@ -348,36 +321,25 @@ Gegenmaßnahmen im Code:
 
 ### Weitere
 
-- **Backlight-PWM** greift ins Leere, siehe Boardrevision oben
+- **Backlight-PWM** greift ins Leere, siehe Boardrevision
 - **Mehrere Wochen ohne Strom** werden beim Nachrollen als Lücke
-  erkannt: Nullwochen in der Historie, Siegelkette reißt, der
-  Rückblick benennt die Lücke
+  erkannt: Nullwochen in der Historie, Siegelkette reißt, der Rückblick
+  benennt die Lücke
 - **Ohne gültige Uhr** ruht die Wochenlogik, der Nachtmodus schaltet
   nicht, und Log-Einträge bekommen einen Ersatzzeitstempel. Sie werden
   nachdatiert, sobald NTP durch ist — aber nur innerhalb derselben
-  Sitzung
-- **Offline** fehlt damit mehr als nur die Weboberfläche. Der PCF85063
-  auf dem Board wird noch nicht genutzt; ihn zu beschreiben und eine
-  Uhrzeit-Einstellseite zu ergänzen würde das Gerät vollständig
-  netzunabhängig machen
-
----
-
-## Nicht umgesetzt
-
-- Töne über den ES8311 (kurze synthetisierte Blips, Level-up-Akkord)
-- RTC schreiben und Uhrzeit am Gerät einstellen
-- Auswertung als Anwendung auf dem Rechner, die `/events` abholt
-- Sprites oder Animation für die Titel
-- Drehencoder am 22-Pin-Header als Eingabe statt Touch
+  Sitzung. Der PCF85063 auf dem Board wird von der Firmware nicht
+  genutzt
 
 ---
 
 ## Lizenz
 
-Eigener Code unter **GPLv3**. Wer die Firmware kommerziell
-weiterverwendet, muss seinen Code ebenfalls offenlegen — offen für
-alle, die selbst bauen, unattraktiv für Nachbauer.
+Eigener Code unter **GPLv3**.
 
-Fremde Dateien behalten ihre jeweiligen Lizenzen. Espressifs
-`esp_lcd_touch` steht unter Apache-2.0.
+Fremde Bestandteile behalten ihre Lizenzen:
+
+- `lb_emoji_28.c` — SIL Open Font License 1.1, siehe `fonts/`
+- `src/touch/esp_lcd_touch.*` — Apache-2.0 (Espressif)
+- übrige Waveshare-Dateien — keine Lizenzangabe im Original, deshalb
+  nicht in diesem Repo enthalten
