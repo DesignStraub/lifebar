@@ -1,343 +1,341 @@
 # LifeBar
 
-Ein eigenständiges Gerät, das aus deiner Zeitverwendung eine Identität
-ableitet und sie dir auf den Schreibtisch stellt.
+A standalone device that turns how you spend your time into an
+identity, and puts it on your desk.
 
-Die Idee kam von den Ressourcenleisten aus Strategiespielen: eine
-schmale Anzeige, die immer sichtbar ist und auf einen Blick zeigt, wie
-man steht. Habit-Tracker als Software gibt es hunderte — der
-Unterschied liegt im Objekt, das dasteht und sich nicht wegwischen
-lässt.
+The idea came from resource bars in strategy games: a narrow display
+that is always visible and shows where you stand at a glance. There are
+hundreds of habit trackers in software — the difference here is the
+object that sits there and cannot be swiped away.
 
-Alle Daten bleiben auf dem Gerät. Kein Account, keine Cloud.
+All data stays on the device. No account, no cloud.
+
+> [Deutsche Fassung](README.de.md) · Source comments are in German; the
+> device UI and web interface are available in English and German.
 
 ---
 
-## Funktionen
+## Features
 
-- **Bis zu 6 Skills** aus 18 Vorlagen, gebucht in Halbstundenschritten
-- **Bis zu 6 Laster** aus 12 Kategorien, gezählt als Vorkommnisse
-- **EXP entsprechen Minuten.** Dadurch selbstkalibrierend: mehr als der
-  Tag hergibt kann niemand eintragen
-- **Levelkurve ohne Maximum** — `20 + 2,6·n²` Minuten pro Stufe
-- **Verdiente Titel** statt gewählter Klassen
-- **Wochenrhythmus** ab Montag 4 Uhr mit Rückblick, Wochenziel, Siegeln
-  und Bonus-EXP für Überstunden
-- **Lockscreen** mit Uhrzeit, Level und Titel
-- **Nachtmodus** mit wärmeren Farben, vierstufige Helligkeit
-- **Deutsch und Englisch**, 12- und 24-Stunden-Format
-- **Weboberfläche** mit Auswertung, Buchen, Einrichtung, Import/Export
-- **Ereignisprotokoll** mit Zeitstempel, als CSV abrufbar
+- **Up to 6 skills** from 18 presets, logged in half-hour steps
+- **Up to 6 vices** from 12 categories, counted as occurrences
+- **EXP equal minutes.** Self-calibrating: nobody can log more than a
+  day holds
+- **Level curve without a cap** — `20 + 2.6·n²` minutes per level
+- **Earned titles** instead of chosen classes
+- **Weekly rhythm** starting Monday 4 a.m. with review, weekly goal,
+  seals and bonus EXP for overtime
+- **Lock screen** showing time, level and title
+- **Night mode** with warmer colours, four brightness steps
+- **English and German**, 12- and 24-hour format
+- **Web interface** for stats, logging, setup, import and export
+- **Event log** with timestamps, available as CSV
 
-## Das Titelsystem
+## The title system
 
-Das Level schaltet Bausteine frei, die Woche füllt sie.
+Level unlocks the parts, the week fills them.
 
-| Level | Aufbau | Beispiel |
+| Level | Structure | Example |
 |---|---|---|
-| 1–2 | — | NOVIZE |
-| 3–9 | Nomen | KRIEGER |
-| 10–19 | + Bestimmungswort | WALDBERSERKER |
-| ab 20 | + Leitwort | NÄCHTLICHER WALDKRIEGSHERR |
+| 1–2 | — | NOVICE |
+| 3–9 | noun | WARRIOR |
+| 10–19 | + qualifier | WILD BERSERKER |
+| 20+ | + lead word | NIGHTLY WILD WARLORD |
 
-Nomen und Bestimmungswort kommen aus den **Gesamtminuten** — sie
-beschreiben dich, nicht deine Woche. Das Nomen steigt mit jeder Stufe
-auf: Krieger → Berserker → Kriegsherr, Gelehrter → Magister →
-Erzgelehrter. Das Bestimmungswort stammt vom zweitstärksten Skill,
-sofern der mindestens 25 % der Minuten des Ersten hat.
+Noun and qualifier come from **total minutes** — they describe you, not
+your week. The noun escalates with each tier: warrior → berserker →
+warlord, scholar → magister → archscholar. The qualifier comes from the
+second strongest skill, provided it holds at least 25 % of the leader's
+minutes.
 
-Das Leitwort wird **beim Wochenwechsel** neu bestimmt, nach
-Auffälligkeit:
+The lead word is reassigned **at every week rollover**, by salience:
 
-1. **REFLEKTIERTER** bei mindestens 10 Laster-Einträgen in der Woche
-2. **ERGEBENER** oder **VIELSEITIGER**, gemessen relativ zur Zahl der
-   gepflegten Module
-3. **NÄCHTLICHER / MORGENDLICHER / MITTÄGLICHER / ABENDLICHER** aus der
-   dominanten Tageszeit
+1. **MINDFUL** at ten or more vice entries in the week
+2. **DEVOTED** or **VERSATILE**, measured relative to the number of
+   active modules
+3. **NIGHTLY / MORNING / MIDDAY / EVENING** from the dominant time of
+   day
 
-Auf Stufe 3 sind über 2000 Titel möglich. Die letzten 26 Wochen werden
-als Chronik gespeichert und im Dashboard angezeigt.
+At tier three that allows over 2000 distinct titles. The last 26 weeks
+are kept as a chronicle and shown in the dashboard.
 
-## Gestaltungsprinzipien
+## Design principles
 
-- **Zeit ist die einzige Währung.** Wer sich verzettelt, sieht es sofort.
-- **Laster kosten keine EXP.** Ehrlichkeit muss billig bleiben, sonst
-  trägt man sie nicht ein — und dann sind die Daten wertlos. Belohnt
-  wird stattdessen das regelmäßige Eintragen selbst.
-- **Das Level sinkt nie.** Abgewählte Module behalten ihre Werte und
-  zählen weiter ins Level, verschwinden aber aus der Anzeige.
-- **Keine Obergrenzen beim Nachtragen.** Abends alles eintragen ist der
-  Normalfall, nicht die Ausnahme.
-- **Erst auswählen, dann buchen.** Bei 12 mm Spaltenbreite kostet ein
-  Fehltreffer so einen Tap statt einer falschen Buchung.
-- **Kein Flash-Zugriff aus dem UI-Task.** Alle Schreibvorgänge laufen
-  über Flags aus `loop()`.
+- **Time is the only currency.** Spreading yourself thin shows up
+  immediately.
+- **Vices cost no EXP.** Honesty has to stay cheap, otherwise people
+  stop logging it — and then the data is worthless. What gets rewarded
+  is consistent logging itself.
+- **Level never drops.** Deselected modules keep their values and still
+  count toward the level, they just disappear from the display.
+- **No caps on backfilling.** Logging everything in the evening is the
+  normal case, not the exception.
+- **Select first, then log.** At 12 mm column width a mis-tap costs one
+  tap instead of a wrong entry.
+- **No flash writes from the UI task.** Every write runs through flags
+  out of `loop()`.
 
 ---
 
 ## Hardware
 
-**Waveshare ESP32-S3-Touch-LCD-3.49**, Revision V2
+**Waveshare ESP32-S3-Touch-LCD-3.49**, revision V2
 
-- ESP32-S3R8, 16 MB Flash, 8 MB PSRAM
-- 3,49" IPS, 172 × 640, kapazitiver Touch (AXS15231B, QSPI + I2C)
-- PCF85063 RTC, QMI8658 IMU, ES8311 Audio, TF-Slot
-- Versorgung über USB-C; der 18650-Halter auf dem Board ist optional
-  und wird von der Firmware nicht ausgewertet
+- ESP32-S3R8, 16 MB flash, 8 MB PSRAM
+- 3.49" IPS, 172 × 640, capacitive touch (AXS15231B, QSPI + I2C)
+- PCF85063 RTC, QMI8658 IMU, ES8311 audio, TF slot
+- Powered over USB-C; the 18650 holder on the board is optional and the
+  firmware does not read it
 
-### Boardrevision beachten
+### Mind the board revision
 
-Von diesem Board existieren V1 und V2. Bei V2 sind **LCD_BL und
-EXIO_INT sowie LCD_TE und LCD_RESET auf getauschten IOs**. Mit dem
-falschen Beispielcode bleibt der Bildschirm schwarz. Erkennbar am
-Rev1.1-Silkscreen.
+This board exists as V1 and V2. On V2, **LCD_BL and EXIO_INT as well as
+LCD_TE and LCD_RESET sit on swapped IOs**. With the wrong example code
+the screen stays black. Identifiable by the Rev1.1 silkscreen.
 
-Deshalb ist die **Backlight-PWM hier deaktiviert**:
-`EXAMPLE_PIN_NUM_BK_LIGHT` aus dem Demo zeigt auf den V1-Pin,
-`setUpduty()` greift ins Leere. Die Helligkeitsregelung läuft
-stattdessen über die Farben.
+Because of that the **backlight PWM is disabled here**:
+`EXAMPLE_PIN_NUM_BK_LIGHT` from the demo points at the V1 pin, so
+`setUpduty()` has no effect. Brightness is handled through colours
+instead.
 
 ---
 
 ## Installation
 
-### 1. Waveshare-Demo besorgen
+### 1. Get the Waveshare demo
 
-Ein Teil der Dateien liegt nicht in diesem Repo (siehe *Fremde
-Dateien*). Hol dir zuerst das Demo-Paket:
+Some files are not in this repo (see *Third-party files*). Start by
+downloading the demo package:
 
 ```
 github.com/waveshareteam/ESP32-S3-Touch-LCD-3.49
 ```
 
-Entpacke es an einen Pfad **ohne Leerzeichen und Umlaute**.
+Extract it to a path **without spaces or non-ASCII characters**.
 
-### 2. Arduino einrichten
+### 2. Set up Arduino
 
-- Boardpaket **esp32 by Espressif Systems ≥ 3.1.0**
-- **LVGL 9 offline** aus `Arduino_Libraries` des Demo-Pakets in den
-  Sketchbook-Ordner `libraries/` kopieren. Liegt dort schon ein
-  `lvgl`-Ordner: löschen. Die mitgelieferte `lv_conf.h` ist angepasst
-  und darf nicht von der Library-Manager-Version überschrieben werden
-- Der Ordner heißt im Paket `lvgl9` — in `lvgl` umbenennen, `lvgl8`
-  aus `libraries/` entfernen
+- Board package **esp32 by Espressif Systems ≥ 3.1.0**
+- **LVGL 9 offline** from `Arduino_Libraries` of the demo package,
+  copied into your sketchbook `libraries/` folder. If an `lvgl` folder
+  is already there, delete it. The bundled `lv_conf.h` is customised
+  and must not be overwritten by the Library Manager version
+- The folder is named `lvgl9` in the package — rename it to `lvgl` and
+  remove `lvgl8` from `libraries/`
 - **SensorLib 0.3.1**
-- Arduino danach vollständig beenden und neu starten
+- Quit Arduino completely and restart it afterwards
 
-In `lv_conf.h` zusätzlich aktivieren:
+Additionally enable in `lv_conf.h`:
 
 ```c
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_48 1
 ```
 
-### 3. Fremde Dateien einfügen
+### 3. Add the third-party files
 
-Aus `10_LVGL_V9_Test` des Demo-Pakets in den Sketch-Ordner kopieren:
+Copy from `10_LVGL_V9_Test` of the demo package into the sketch folder:
 
 ```
 lvgl_port.c   lvgl_port.h   i2c_bsp.c   i2c_bsp.h   user_config.h
 src/axs15231b/   src/touch/   src/lcd_bl_bsp/
 ```
 
-Anschließend die Änderungen aus `docs/waveshare-patches.md` anwenden.
-Ohne sie startet die Firmware nicht oder der Touch reagiert nicht.
+Then apply the changes from `docs/waveshare-patches.md`. Without them
+the firmware does not boot or the touch does not respond.
 
-### 4. Tools-Einstellungen
+### 4. Tools settings
 
-| Einstellung | Wert |
+| Setting | Value |
 |---|---|
 | Board | ESP32S3 Dev Module |
 | USB CDC On Boot | **Enabled** |
 | Flash Size | 16MB (128Mb) |
 | PSRAM | **OPI PSRAM** |
-| Partition Scheme | ein Schema mit **FATFS** |
+| Partition Scheme | any scheme including **FATFS** |
 
-Das Partitionsschema ist wichtig: Das Ereignisprotokoll liegt in einer
-FAT-Partition. Ohne FATFS-Anteil meldet der Bootlog
+The partition scheme matters: the event log lives in a FAT partition.
+Without a FATFS share the boot log reports
 `[log] FEHLER: FFat nicht verfuegbar`.
 
-Eine grafische Referenz liegt im Demo-Paket als
+A visual reference ships with the demo package as
 `Tools Configuration.png`.
 
-### 5. Hochladen und einrichten
+### 5. Upload and set up
 
-Ohne hinterlegte WLAN-Daten öffnet das Gerät einen Hotspot
-`LifeBar-XXXX`. Verbinden, das Portal springt auf, dort entweder das
-WLAN eintragen oder direkt zu `/setup` gehen.
+With no stored WiFi credentials the device opens a hotspot named
+`LifeBar-XXXX`. Connect to it, the portal opens by itself, then either
+enter your WiFi there or go straight to `/setup`.
 
-**Reihenfolge beachten:** Erst über `/setup` die Skills einrichten,
-dann das WLAN eintragen. Andersherum schließt sich der Hotspot, bevor
-man bei der Einrichtung war.
+**Mind the order:** set up your skills via `/setup` first, then enter
+the WiFi credentials. The other way round the hotspot closes before you
+got to the setup page.
 
-**Werksreset:** BOOT-Taste gedrückt halten, einstecken, zwei Sekunden
-weiter halten.
-
----
-
-## Bedienung
-
-Die Hauptseite in der Mitte, drei Richtungen darum herum:
-
-| Geste | Ziel |
-|---|---|
-| links / rechts, überall | zwischen Skills und Lastern wechseln |
-| von oben nach unten | Wochenrückblick |
-| nochmal nach unten | Einstellungen |
-| von unten nach oben | Lockscreen |
-
-Auf Unterseiten führt die Gegenrichtung eine Ebene zurück, ausgehend
-von der Kante mit dem Griff.
-
-**Buchen:** Tap auf eine Spalte wählt sie aus, dann buchen die großen
-Flächen unten — links minus, rechts plus. Nochmal auf die Spalte hebt
-die Auswahl auf. Die Auswahl bleibt nach dem Buchen bestehen, 1,5 h
-Gym sind also einmal auswählen und dreimal drücken.
-
-Der Lockscreen kommt nach drei Minuten Ruhe von selbst.
+**Factory reset:** hold the BOOT button, plug the device in, keep
+holding for two seconds.
 
 ---
 
-## Weboberfläche
+## Using the device
 
-Erreichbar unter `http://lifebar.local` oder der IP aus dem Bootlog.
-Unter Windows braucht `lifebar.local` einen installierten
-Bonjour-Dienst.
+The main screen sits in the middle, three directions around it:
 
-| Pfad | Zweck |
+| Gesture | Target |
 |---|---|
-| `/` | Auswertung: Kalender, Tageszeit, Verteilung, Verlauf, Buchen |
-| `/setup` | Skills, Laster, Sprache |
-| `/add` | Zeit nachtragen mit Datum und Uhrzeit |
-| `/import` | Datensatz bearbeiten und übernehmen |
-| `/export` | Datensatz als Textdatei herunterladen |
-| `/events` | Ereignisprotokoll als CSV, `?since=UNIXZEIT` für Zuwachs |
-| `/info` | Status als JSON |
-| `/book` | Buchen, wird von der Auswertungsseite genutzt |
+| left / right, anywhere | switch between skills and vices |
+| swipe down from the top | weekly review |
+| down again | settings |
+| swipe up from the bottom | lock screen |
 
-Die Seite ist reines HTML, CSS und SVG ohne Framework und ohne CDN,
-rund 19 KB im PROGMEM. Sie funktioniert also auch, wenn der Router kein
-Internet hat.
+On subpages the opposite direction goes back one level, starting from
+the edge that shows the grip.
 
-### Import- und Exportformat
+**Logging:** tap a column to select it, then the large areas at the
+bottom do the logging — minus on the left, plus on the right. Tapping
+the column again clears the selection. The selection persists after
+logging, so 1.5 h of gym is one tap to select and three to add.
 
-Schlichter Text, von Hand lesbar und editierbar. Zeilen mit `#` werden
-ignoriert. Diese Zeilen **setzen** Werte:
+The lock screen appears by itself after three minutes of inactivity.
+
+---
+
+## Web interface
+
+Reachable at `http://lifebar.local` or the IP from the boot log. On
+Windows `lifebar.local` needs the Bonjour service installed.
+
+| Path | Purpose |
+|---|---|
+| `/` | Stats: calendar, time of day, distribution, history, logging |
+| `/setup` | Skills, vices, language |
+| `/add` | Backfill time with date and clock time |
+| `/import` | Edit and apply the data set |
+| `/export` | Download the data set as a text file |
+| `/events` | Event log as CSV, `?since=UNIXTIME` for increments |
+| `/info` | Status as JSON |
+| `/book` | Logging, used by the stats page |
+
+The page is plain HTML, CSS and SVG with no framework and no CDN, about
+19 KB in PROGMEM. It therefore works even when the router has no
+internet connection.
+
+### Import and export format
+
+Plain text, readable and editable by hand. Lines starting with `#` are
+ignored. These lines **set** values:
 
 ```
-lang=de
+lang=en
 week_goal=600
 bonus=90
 skill,GYM,1230
 vice,SOCIAL,12
 ```
 
-Ereniszeilen **addieren** und tragen einen Zeitstempel:
+Event lines **add** and carry a timestamp:
 
 ```
 event,2026-08-17,19:30,skill,GYM,90
 event,2026-08-17,21:00,vice,STREAMING,1
 ```
 
-Menge sind Minuten bei Skills und Anzahl bei Lastern. Die Woche wird
-aus dem Datum bestimmt, der Eintrag landet also korrekt in laufender
-oder Vorwoche und erscheint im Kalender.
+Amount is minutes for skills and a count for vices. The week is derived
+from the date, so an entry lands correctly in the current or previous
+week and shows up in the calendar.
 
 ---
 
-## Dateien
+## Files
 
-### Eigener Code (GPLv3)
+### Own code (GPLv3)
 
-| Datei | Inhalt |
+| File | Contents |
 |---|---|
-| `Lifebar.ino` | Start, Hauptschleife, Compile-Schalter |
-| `lifebar_i18n.h` | Texttabelle, Sprachen, Leitwörter, Wochentage |
-| `lifebar_model.h` | Datenmodell, Levelkurve, Titel, Wochenlogik, NVS |
-| `lifebar_log.h` | Ereignisprotokoll auf FAT, 8 Byte je Eintrag |
-| `lifebar_net.h` | WLAN, Captive Portal, Webserver, alle Endpunkte |
-| `lifebar_page.h` | Auswertungsseite als PROGMEM-String |
-| `ui_lifebar.h` | Sämtliche Bildschirme, Gesten, Farben |
+| `Lifebar.ino` | Startup, main loop, compile switches |
+| `lifebar_i18n.h` | String table, languages, lead words, weekdays |
+| `lifebar_model.h` | Data model, level curve, titles, week logic, NVS |
+| `lifebar_log.h` | Event log on FAT, 8 bytes per entry |
+| `lifebar_net.h` | WiFi, captive portal, web server, all endpoints |
+| `lifebar_page.h` | Stats page as a PROGMEM string |
+| `ui_lifebar.h` | All screens, gestures, colours |
 
-Die Include-Reihenfolge ist `i18n → model → log → net → ui`. Alles, was
-zwei Ebenen brauchen, gehört in die untere der beiden — sonst
-kompiliert es nicht. Das ist bei header-only mit `static` die häufigste
-Fehlerquelle.
+Include order is `i18n → model → log → net → ui`. Anything two layers
+need belongs in the lower of the two — otherwise it will not compile.
+With header-only code and `static` that is the most common mistake.
 
-### Mitgeliefert
+### Bundled
 
-`lb_emoji_28.c` — die Icons, als LVGL-Bitmapschrift aus **Noto Emoji**
-erzeugt mit dem Font Converter von `lvgl.io`. Liegt fertig im Repo.
-Lizenzhinweis in `fonts/`.
+`lb_emoji_28.c` — the icons, generated as an LVGL bitmap font from
+**Noto Emoji** using the font converter at `lvgl.io`. Ships with the
+repo. Licence notice in `OFL.txt`.
 
-### Fremde Dateien
+### Third-party files
 
-Die Waveshare-Dateien aus Schritt 3 liegen **nicht** im Repo, weil im
-Original keine Lizenz angegeben war. Ihre nötigen Änderungen stehen in
+The Waveshare files from step 3 are **not** in this repo because the
+original states no licence. The changes they need are documented in
 `docs/waveshare-patches.md`.
 
 ---
 
-## Compile-Schalter
+## Compile switches
 
-Oben in `Lifebar.ino`:
+At the top of `Lifebar.ino`:
 
-| Schalter | Wirkung |
+| Switch | Effect |
 |---|---|
-| `USE_NET` | 0 = Funkteil bleibt komplett aus |
-| `USE_WEB` | 0 = WLAN ohne Webserver, DNS und mDNS |
-| `USE_MDNS` | 0 = kein mDNS, Gerät nur über IP erreichbar |
-| `BOOT_DEBUG` | Startmarker im Serial Monitor |
-| `HEAP_DEBUG` | Speicherverbrauch mitschreiben |
+| `USE_NET` | 0 = radio stays off entirely |
+| `USE_WEB` | 0 = WiFi without web server, DNS and mDNS |
+| `USE_MDNS` | 0 = no mDNS, device reachable by IP only |
+| `BOOT_DEBUG` | Boot markers on the serial monitor |
+| `HEAP_DEBUG` | Log memory usage |
 
-Dazu `UI_DEBUG` in `ui_lifebar.h` und `TOUCH_DEBUG` in `lvgl_port.c`.
+Plus `UI_DEBUG` in `ui_lifebar.h` and `TOUCH_DEBUG` in `lvgl_port.c`.
 
-Die ersten drei sind das Werkzeug, mit dem sich das unten beschriebene
-Touch-Problem eingrenzen lässt.
-
----
-
-## Bekannte Probleme
-
-### Touch und Netzwerkdienste
-
-Auf diesem Board liefern die I2C-Lesevorgänge des Touch unter
-bestimmten Netzwerkkonstellationen verfälschte Daten: alle 32 Bytes
-enthalten denselben Wert, während die Übertragung `ESP_OK` meldet. Der
-Füllwert wechselt zwischen Sitzungen.
-
-Nachgewiesen: mit `USE_NET 0` funktioniert der Touch zuverlässig, mit
-Netzwerkdiensten nicht immer. Der Touch-Pfad selbst ist unverändertes
-Waveshare-Original, und das LVGL-8-Beispiel des Herstellers verwendet
-identischen Code — ein Wechsel der LVGL-Version ändert daran nichts.
-
-Gegenmaßnahmen im Code:
-
-- **Plausibilitätsprüfung** im Touch-Callback: Lesevorgänge, in denen
-  die ersten acht Bytes identisch sind, werden verworfen. Bei einer
-  Abfrage alle 30 ms fällt das nicht auf
-- Touch-Bus auf 100 kHz statt 300 kHz
-- WLAN im Stromsparmodus
-
-### Weitere
-
-- **Backlight-PWM** greift ins Leere, siehe Boardrevision
-- **Mehrere Wochen ohne Strom** werden beim Nachrollen als Lücke
-  erkannt: Nullwochen in der Historie, Siegelkette reißt, der Rückblick
-  benennt die Lücke
-- **Ohne gültige Uhr** ruht die Wochenlogik, der Nachtmodus schaltet
-  nicht, und Log-Einträge bekommen einen Ersatzzeitstempel. Sie werden
-  nachdatiert, sobald NTP durch ist — aber nur innerhalb derselben
-  Sitzung. Der PCF85063 auf dem Board wird von der Firmware nicht
-  genutzt
+The first three are the tool for narrowing down the touch issue
+described below.
 
 ---
 
-## Lizenz
+## Known issues
 
-Eigener Code unter **GPLv3**.
+### Touch and network services
 
-Fremde Bestandteile behalten ihre Lizenzen:
+On this board the I2C reads of the touch controller return corrupted
+data under certain network conditions: all 32 bytes hold the same value
+while the transfer reports `ESP_OK`. The fill value changes between
+sessions.
 
-- `lb_emoji_28.c` — SIL Open Font License 1.1, siehe `OFL.txt`
+Established: with `USE_NET 0` the touch works reliably, with network
+services it does not always. The touch path itself is unmodified
+Waveshare original, and the vendor's LVGL 8 example uses identical code
+— switching LVGL versions changes nothing about it.
+
+Mitigations in the code:
+
+- **Sanity check** in the touch callback: reads where the first eight
+  bytes are identical get discarded. At one poll every 30 ms that goes
+  unnoticed
+- Touch bus at 100 kHz instead of 300 kHz
+- WiFi in power save mode
+
+### Others
+
+- **Backlight PWM** has no effect, see board revision above
+- **Several weeks without power** are detected as a gap when rolling
+  forward: zero weeks go into the history, the seal streak breaks, and
+  the review names the gap
+- **Without a valid clock** the week logic rests, night mode does not
+  switch, and log entries get a placeholder timestamp. They are redated
+  once NTP succeeds, but only within the same session. The PCF85063 on
+  the board is not used by the firmware
+
+---
+
+## Licence
+
+Own code under **GPLv3**.
+
+Third-party components keep their own licences:
+
+- `lb_emoji_28.c` — SIL Open Font License 1.1, see `OFL.txt`
 - `src/touch/esp_lcd_touch.*` — Apache-2.0 (Espressif)
