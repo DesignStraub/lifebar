@@ -108,7 +108,7 @@ firmware targets **V2 only**:
 
 ### Controls (optional)
 
-A rotary encoder with push button (EC11) as volume knob and four keys,
+A rotary encoder with push button (EC11) as volume knob and three media keys,
 wired to the 22-pin header. Every contact switches to GND, the inputs use internal
 pull-ups. Without anything connected the firmware behaves as before.
 
@@ -117,11 +117,10 @@ pull-ups. Without anything connected the firmware behaves as before.
 | Knob A / B | 1 / 2 | J6 |
 | Knob push | 5 | J6 |
 | Previous / Play / Next | 38 / 39 / 40 | J3 |
-| Screen on/off | 41 | J3 |
 | GND | — | J6 pin 9 or J3 pin 9 |
 | Screen on/off | 16 | onboard PWR button |
 
-GPIO 38–41 share lines with the TF slot — leave it empty. Avoided on
+GPIO 38–40 share lines with the TF slot — leave it empty. Avoided on
 purpose: strapping pins 0, 3, 45, 46, GPIO 4 (battery divider) and
 GPIO 43 (UART output the bootloader writes to). If the knob turns the
 wrong way, swap `PIN_KNOB_A` and `PIN_KNOB_B` in `lifebar_hw.h`.
@@ -237,8 +236,8 @@ clears itself after 15 seconds without a touch.
 
 The lock screen appears by itself after three minutes of inactivity.
 
-**Screen off:** a short press on the screen key (or the PWR button on
-the back of the board) turns the backlight off and on. While it is dark, touches are ignored; a long
+**Screen off:** a short press on the PWR button on the back of the
+board turns the backlight off and on. While it is dark, touches are ignored; a long
 press (about half a second) wakes it. `/screen` does the same from the
 browser.
 
@@ -249,7 +248,6 @@ browser.
 | Turn | Volume — or, while a column is selected, log one step per detent |
 | Press | Clear the selection, without one: mute |
 | Keys 1 / 2 / 3 | Previous / play-pause / next |
-| Key 4 | Screen on/off |
 
 Media keys and volume never wake the screen and work while it is off.
 

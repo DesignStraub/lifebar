@@ -101,11 +101,10 @@ static bool screen_on = true;
    Drehknopf A / B     GPIO 1 / 2   (22-Pin-Header J6)
    Knopf-Taster        GPIO 5       (J6)
    Zurueck/Play/Vor    GPIO 38 / 39 / 40  (J3)
-   Bildschirm-Taste    GPIO 41      (J3) - wie PWR, aber aussen am Deck
 
    Bewusst gemieden: GPIO 0, 3, 45, 46 sind Strapping-Pins, GPIO 4
    haengt am Batterie-Spannungsteiler, GPIO 43 ist der UART-Ausgang,
-   auf dem der Bootloader schreibt. GPIO 38-41 teilen sich die Leitungen
+   auf dem der Bootloader schreibt. GPIO 38-40 teilen sich die Leitungen
    mit dem SD-Slot - der bleibt in diesem Projekt leer.
    Dreht der Knopf falsch herum: PIN_KNOB_A und PIN_KNOB_B tauschen.  */
 #define PIN_PWR_KEY    16
@@ -115,9 +114,8 @@ static bool screen_on = true;
 #define PIN_KEY_PREV   38
 #define PIN_KEY_PLAY   39
 #define PIN_KEY_NEXT   40
-#define PIN_KEY_SCREEN 41
 
-enum { KEY_PWR = 0, KEY_KNOB, KEY_PREV, KEY_PLAY, KEY_NEXT, KEY_SCREEN, KEY_COUNT };
+enum { KEY_PWR = 0, KEY_KNOB, KEY_PREV, KEY_PLAY, KEY_NEXT, KEY_COUNT };
 
 #define KEY_BIT(k)     (1u << (k))
 #define KEY_STABLE_MS  25      /* so lange muss ein Pegel stehen    */
@@ -137,8 +135,7 @@ typedef struct {
 } hw_key_t;
 
 static hw_key_t hw_keys[KEY_COUNT] = {
-  { PIN_PWR_KEY }, { PIN_KNOB_SW }, { PIN_KEY_PREV }, { PIN_KEY_PLAY }, { PIN_KEY_NEXT },
-  { PIN_KEY_SCREEN }
+  { PIN_PWR_KEY }, { PIN_KNOB_SW }, { PIN_KEY_PREV }, { PIN_KEY_PLAY }, { PIN_KEY_NEXT }
 };
 
 typedef struct {

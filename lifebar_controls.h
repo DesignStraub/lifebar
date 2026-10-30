@@ -51,7 +51,7 @@ static void controls_tick(void)
     screen_req = SCREEN_REQ_NONE;
     screen_set(req != 0);
   }
-  if (ev.click & (KEY_BIT(KEY_PWR) | KEY_BIT(KEY_SCREEN))) screen_set(!screen_on);
+  if (ev.click & KEY_BIT(KEY_PWR)) screen_set(!screen_on);
   screen_sync();
 
 #if USE_CONTROLS
