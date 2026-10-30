@@ -26,7 +26,10 @@ All data stays on the device. No account, no cloud.
 - **Weekly rhythm** starting Monday 4 a.m. with review, weekly goal,
   seals and bonus EXP for overtime
 - **Lock screen** showing time, level and title
-- **Night mode** with warmer colours, four brightness steps
+- **Night mode** with warmer colours, four real backlight steps
+- **Screen off** via the PWR button on the back or the web interface
+- **Optional knob and three keys**: USB media control (volume, play,
+  next, previous) and tactile logging
 - **English and German**, 12- and 24-hour format
 - **Web interface** for stats, logging, setup, import and export
 - **Event log** with timestamps, available as CSV
@@ -91,12 +94,37 @@ are kept as a chronicle and shown in the dashboard.
 
 This board exists as V1 and V2. On V2, **LCD_BL and EXIO_INT as well as
 LCD_TE and LCD_RESET sit on swapped IOs**. With the wrong example code
-the screen stays black. Identifiable by the Rev1.1 silkscreen.
+the screen stays black. Identifiable by the Rev1.1 silkscreen. This
+firmware targets **V2 only**:
 
-Because of that the **backlight PWM is disabled here**:
-`EXAMPLE_PIN_NUM_BK_LIGHT` from the demo points at the V1 pin, so
-`setUpduty()` has no effect. Brightness is handled through colours
-instead.
+- **Backlight** on GPIO 42. It feeds the FB pin of the AP3032 LED
+  driver through an RC filter, so it is analogue dimming without
+  flicker: LOW = full brightness, HIGH = off. `BL_EN` on the TCA9554 IO
+  expander switches the driver off completely
+- **LCD reset** on the IO expander (EXIO5). GPIO 21 is the panel's TE
+  output on V2 and is left alone
+- Pins taken from the V2 schematic and Waveshare's
+  [V2 examples](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-3.49-V2)
+
+### Controls (optional)
+
+A rotary encoder with push button (EC11) as volume knob and four keys,
+wired to the 22-pin header. Every contact switches to GND, the inputs use internal
+pull-ups. Without anything connected the firmware behaves as before.
+
+| Function | GPIO | Header |
+|---|---|---|
+| Knob A / B | 1 / 2 | J6 |
+| Knob push | 5 | J6 |
+| Previous / Play / Next | 38 / 39 / 40 | J3 |
+| Screen on/off | 41 | J3 |
+| GND | — | J6 pin 9 or J3 pin 9 |
+| Screen on/off | 16 | onboard PWR button |
+
+GPIO 38–41 share lines with the TF slot — leave it empty. Avoided on
+purpose: strapping pins 0, 3, 45, 46, GPIO 4 (battery divider) and
+GPIO 43 (UART output the bootloader writes to). If the knob turns the
+wrong way, swap `PIN_KNOB_A` and `PIN_KNOB_B` in `lifebar_hw.h`.
 
 ---
 
@@ -132,31 +160,42 @@ Additionally enable in `lv_conf.h`:
 #define LV_FONT_MONTSERRAT_48 1
 ```
 
-### 3. Add the third-party files
+### 3. Add the third-party drivers
 
-Copy from `10_LVGL_V9_Test` of the demo package into the sketch folder:
+Copy these two folders from `10_LVGL_V9_Test` of the demo package into
+the sketch folder:
 
 ```
-lvgl_port.c   lvgl_port.h   i2c_bsp.c   i2c_bsp.h   user_config.h
-src/axs15231b/   src/touch/   src/lcd_bl_bsp/
+src/axs15231b/   src/touch/
 ```
 
-Then apply the changes from `docs/waveshare-patches.md`. Without them
-the firmware does not boot or the touch does not respond.
+`lvgl_port.c`, `i2c_bsp.c`, `user_config.h` and their headers are
+already in the repo, adapted for the V2 board. `src/lcd_bl_bsp/` is no
+longer needed — the backlight is driven from `lifebar_hw.h`.
 
 ### 4. Tools settings
 
 | Setting | Value |
 |---|---|
 | Board | ESP32S3 Dev Module |
+| USB Mode | **USB-OTG (TinyUSB)** for media keys, otherwise Hardware CDC |
 | USB CDC On Boot | **Enabled** |
 | Flash Size | 16MB (128Mb) |
 | PSRAM | **OPI PSRAM** |
-| Partition Scheme | any scheme including **FATFS** |
+| Partition Scheme | any scheme including **FATFS**, e.g. *16M Flash (3MB APP/9.9MB FATFS)* |
 
 The partition scheme matters: the event log lives in a FAT partition.
 Without a FATFS share the boot log reports
 `[log] FEHLER: FFat nicht verfuegbar`.
+
+**USB mode:** the media keys need TinyUSB. With *Hardware CDC and JTAG*
+the firmware builds and runs the same, just without media keys — the
+boot log says which mode is active. TinyUSB needs about 32 KB more
+internal RAM. Should an upload in TinyUSB mode fail to find the port,
+hold BOOT, tap RESET, release BOOT and upload again.
+
+For media keys the LifeBar has to be connected to the computer with a
+data cable; on a plain USB charger they do nothing.
 
 A visual reference ships with the demo package as
 `Tools Configuration.png`.
@@ -193,9 +232,26 @@ the edge that shows the grip.
 **Logging:** tap a column to select it, then the large areas at the
 bottom do the logging — minus on the left, plus on the right. Tapping
 the column again clears the selection. The selection persists after
-logging, so 1.5 h of gym is one tap to select and three to add.
+logging, so 1.5 h of gym is one tap to select and three to add. It
+clears itself after 15 seconds without a touch.
 
 The lock screen appears by itself after three minutes of inactivity.
+
+**Screen off:** a short press on the screen key (or the PWR button on
+the back of the board) turns the backlight off and on. While it is dark, touches are ignored; a long
+press (about half a second) wakes it. `/screen` does the same from the
+browser.
+
+**Knob and keys** (if fitted):
+
+| Input | Effect |
+|---|---|
+| Turn | Volume — or, while a column is selected, log one step per detent |
+| Press | Clear the selection, without one: mute |
+| Keys 1 / 2 / 3 | Previous / play-pause / next |
+| Key 4 | Screen on/off |
+
+Media keys and volume never wake the screen and work while it is off.
 
 ---
 
@@ -214,6 +270,7 @@ Windows `lifebar.local` needs the Bonjour service installed.
 | `/events` | Event log as CSV, `?since=UNIXTIME` for increments |
 | `/info` | Status as JSON |
 | `/book` | Logging, used by the stats page |
+| `/screen` | Screen on/off: `?on=0`, `?on=1`, without argument toggle |
 
 The page is plain HTML, CSS and SVG with no framework and no CDN, about
 19 KB in PROGMEM. It therefore works even when the router has no
@@ -251,17 +308,26 @@ week and shows up in the calendar.
 
 | File | Contents |
 |---|---|
-| `Lifebar.ino` | Startup, main loop, compile switches |
+| `Lifebar.ino` | Startup, main loop |
+| `lifebar_config.h` | All compile switches |
+| `lifebar_hw.h` | Backlight, keys, knob, USB media keys |
 | `lifebar_i18n.h` | String table, languages, lead words, weekdays |
 | `lifebar_model.h` | Data model, level curve, titles, week logic, NVS |
 | `lifebar_log.h` | Event log on FAT, 8 bytes per entry |
 | `lifebar_net.h` | WiFi, captive portal, web server, all endpoints |
 | `lifebar_page.h` | Stats page as a PROGMEM string |
 | `ui_lifebar.h` | All screens, gestures, colours |
+| `lifebar_controls.h` | Wires keys and knob to screen, logging and media |
 
-Include order is `i18n → model → log → net → ui`. Anything two layers
-need belongs in the lower of the two — otherwise it will not compile.
-With header-only code and `static` that is the most common mistake.
+Include order is `config → hw → i18n → model → log → net → ui →
+controls`. Anything two layers need belongs in the lower of the two —
+otherwise it will not compile. With header-only code and `static` that
+is the most common mistake.
+
+`lvgl_port.c`, `i2c_bsp.c` and `user_config.h` started as Waveshare
+demo files and are adapted here: V2 pins, IO expander, LVGL mutex
+exported, touch plausibility check, 16 KB UI task stack, touch bus at
+100 kHz.
 
 ### Bundled
 
@@ -271,21 +337,24 @@ repo. Licence notice in `OFL.txt`.
 
 ### Third-party files
 
-The Waveshare files from step 3 are **not** in this repo because the
-original states no licence. The changes they need are documented in
-`docs/waveshare-patches.md`.
+The driver folders from step 3 are **not** in this repo because the
+original states no licence.
 
 ---
 
 ## Compile switches
 
-At the top of `Lifebar.ino`:
+All in `lifebar_config.h`:
 
 | Switch | Effect |
 |---|---|
 | `USE_NET` | 0 = radio stays off entirely |
 | `USE_WEB` | 0 = WiFi without web server, DNS and mDNS |
 | `USE_MDNS` | 0 = no mDNS, device reachable by IP only |
+| `USE_CONTROLS` | 0 = ignore knob and keys on the header |
+| `USE_USB_MEDIA` | 0 = no USB media keys |
+| `USE_BOOT_RESET` | 0 = no factory reset via BOOT at power-up |
+| `SHOW_SPLASH` | Splash screen while starting |
 | `BOOT_DEBUG` | Boot markers on the serial monitor |
 | `HEAP_DEBUG` | Log memory usage |
 
@@ -306,9 +375,12 @@ while the transfer reports `ESP_OK`. The fill value changes between
 sessions.
 
 Established: with `USE_NET 0` the touch works reliably, with network
-services it does not always. The touch path itself is unmodified
-Waveshare original, and the vendor's LVGL 8 example uses identical code
-— switching LVGL versions changes nothing about it.
+services it does not always. The touch path itself is Waveshare
+original, and the vendor's LVGL 8 example uses identical code —
+switching LVGL versions changes nothing about it.
+
+The optional knob and keys sidestep the problem for logging: they are
+plain GPIOs and a hardware pulse counter, not I2C.
 
 Mitigations in the code:
 
@@ -320,7 +392,6 @@ Mitigations in the code:
 
 ### Others
 
-- **Backlight PWM** has no effect, see board revision above
 - **Several weeks without power** are detected as a gap when rolling
   forward: zero weeks go into the history, the seal streak breaks, and
   the review names the gap

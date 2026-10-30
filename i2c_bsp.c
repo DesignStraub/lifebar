@@ -8,6 +8,12 @@ static i2c_master_bus_handle_t user_i2c_port1_handle = NULL;
 i2c_master_dev_handle_t disp_touch_dev_handle = NULL;
 i2c_master_dev_handle_t rtc_dev_handle = NULL;
 i2c_master_dev_handle_t imu_dev_handle = NULL;
+static i2c_master_dev_handle_t exio_dev_handle = NULL;
+
+/* Schattenkopien der TCA9554-Register, Werte nach dem Einschalten:
+   alles Eingang, Ausgangsregister auf HIGH.                        */
+static uint8_t exio_out = 0xFF;
+static uint8_t exio_dir = 0xFF;
 
 
 static uint32_t i2c_data_pdMS_TICKS = 0;
@@ -51,9 +57,36 @@ void i2c_master_Init(void)
   dev_cfg.device_address = EXAMPLE_IMU_ADDR;
   ESP_ERROR_CHECK(i2c_master_bus_add_device(user_i2c_port0_handle, &dev_cfg, &imu_dev_handle));
 
+  dev_cfg.device_address = EXIO_ADDR;
+  ESP_ERROR_CHECK(i2c_master_bus_add_device(user_i2c_port0_handle, &dev_cfg, &exio_dev_handle));
+
+  /* Touch langsamer takten: 100 kHz sind stoerungsfester, und 43 Byte
+     brauchen dabei nur 4 ms - bei einer Abfrage alle 30 ms egal.
+     Stand so in der Doku, fehlte aber im Code.                     */
   dev_cfg.device_address = I2C_TOUCH_ADDR;
+  dev_cfg.scl_speed_hz   = 100000;
   ESP_ERROR_CHECK(i2c_master_bus_add_device(user_i2c_port1_handle, &dev_cfg, &disp_touch_dev_handle));
 
+}
+
+/* TCA9554: Register 1 = Ausgang, 3 = Richtung (1 = Eingang). Erst den
+   Pegel, dann die Richtung schreiben - so liegt beim Umschalten auf
+   Ausgang sofort der richtige Wert an.
+   Fehler werden nur gemeldet, nie mit Abbruch quittiert: ohne
+   Expander laeuft das Display weiter wie bisher, nur ohne Reset und
+   ohne Abschalten des Backlights.                                  */
+esp_err_t exio_set(uint8_t mask, bool level)
+{
+  if (!exio_dev_handle) return ESP_ERR_INVALID_STATE;
+
+  exio_out = level ? (exio_out | mask) : (exio_out & ~mask);
+  uint8_t out[2] = { 0x01, exio_out };
+  esp_err_t e = i2c_master_transmit(exio_dev_handle, out, 2, i2c_data_pdMS_TICKS);
+  if (e != ESP_OK || !(exio_dir & mask)) return e;
+
+  exio_dir &= ~mask;
+  uint8_t dir[2] = { 0x03, exio_dir };
+  return i2c_master_transmit(exio_dev_handle, dir, 2, i2c_data_pdMS_TICKS);
 }
 
 uint8_t i2c_write_buff(i2c_master_dev_handle_t dev_handle,int reg,uint8_t *buf,uint8_t len)

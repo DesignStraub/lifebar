@@ -19,8 +19,20 @@
 #define EXAMPLE_PIN_NUM_LCD_DATA1  (GPIO_NUM_12)
 #define EXAMPLE_PIN_NUM_LCD_DATA2  (GPIO_NUM_13)
 #define EXAMPLE_PIN_NUM_LCD_DATA3  (GPIO_NUM_14)
-#define EXAMPLE_PIN_NUM_LCD_RST    (GPIO_NUM_21)
-#define EXAMPLE_PIN_NUM_BK_LIGHT   (GPIO_NUM_8) 
+/* Boardrevision V2 (Rev1.1). Gegenueber V1 sind LCD_BL/EXIO_INT und
+   LCD_TE/LCD_RESET getauscht: GPIO 21 ist hier TE, ein Ausgang des
+   Panels, und darf nicht getrieben werden. Der Reset liegt am
+   IO-Expander. Werte aus dem V2-Schaltplan und Waveshares V2-Demo. */
+#define EXAMPLE_PIN_NUM_LCD_TE     (GPIO_NUM_21)
+#define EXAMPLE_PIN_NUM_BK_LIGHT   (GPIO_NUM_42)
+#define EXAMPLE_PIN_NUM_EXIO_INT   (GPIO_NUM_8)
+
+/* TCA9554 IO-Expander an I2C 0 */
+#define EXIO_ADDR          0x20
+#define EXIO_PIN_TOUCH_INT (1u << 0)
+#define EXIO_PIN_BL_EN     (1u << 1)   /* Backlight-Treiber an/aus   */
+#define EXIO_PIN_LCD_RST   (1u << 5)
+#define EXIO_PIN_SYS_EN    (1u << 6)   /* nur mit Akku von Belang    */
 
 
 #define I2C_TOUCH_ADDR                    0x3b

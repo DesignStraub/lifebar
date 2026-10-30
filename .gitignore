@@ -3,3 +3,6 @@ build/
 *.elf
 .DS_Store
 .vscode/
+
+# Waveshare-Treiber: lokal noetig, aber nicht im Repo (siehe README)
+src/

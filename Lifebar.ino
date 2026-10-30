@@ -1,47 +1,24 @@
+#include "lifebar_config.h"
 #include "user_config.h"
 #include "lvgl_port.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "i2c_bsp.h"
-#include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 
+#include "lifebar_hw.h"
 #include "lifebar_model.h"
 #include "lifebar_log.h"
 #include "lifebar_net.h"
 #include "ui_lifebar.h"
+#include "lifebar_controls.h"
 
-/* ---- Notschalter zum Eingrenzen -------------------------------------
-   Bleibt der Start haengen, eines davon auf 0 setzen und neu flashen.
-   Der Marker im Serial Monitor zeigt, wie weit er gekommen ist.      */
-#define USE_BOOT_RESET  1     /* Werksreset ueber die BOOT-Taste      */
-
-/* Startmarker. Auf 0 setzen, wenn nicht gebraucht. */
-#define BOOT_DEBUG 0
-
-/* ---- Eingrenzung ----------------------------------------------------
-   USE_NET 0  -> Funkteil bleibt komplett aus (kein WLAN, kein Portal)
-   USE_WEB 0  -> WLAN verbindet, aber ohne Webserver, DNS und mDNS
-
-   Damit laesst sich trennen, ob die Stoerung vom Funkbetrieb selbst
-   kommt oder von den Netzwerkdiensten. Reihenfolge zum Testen:
-     1) USE_NET 1, USE_WEB 0  - Funk an, keine Dienste
-     2) USE_NET 0             - gar kein Funk
-   Geht 1) nicht und 2) schon, ist es das Funkteil.
-   Geht 1) und 2), ist es der Webserver.                          */
-#define USE_NET 1
-#define USE_WEB 1
-#define USE_MDNS 1    /* mDNS getrennt schaltbar - belegt viel RAM */
-#define HEAP_DEBUG 0  /* Speicherverbrauch mitschreiben            */
-#define SHOW_SPLASH 0     /* Startbild - zum Eingrenzen abschaltbar */
+/* Compile-Schalter stehen in lifebar_config.h */
 
 #if BOOT_DEBUG
   #define STEP(n, txt) Serial.printf("[boot %d] %s\n", n, txt)
 #else
   #define STEP(n, txt) do {} while (0)
 #endif
-
-static uint32_t week_check  = 0;
-static bool     week_synced = false;
 
 void setup()
 {
@@ -59,7 +36,7 @@ void setup()
   lvgl_port_init();
   STEP(4, "lvgl");
 
-  lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
+  backlight_begin(100);          /* gespeicherte Stufe folgt nach store */
   STEP(5, "backlight");
 
 #if SHOW_SPLASH
@@ -70,6 +47,7 @@ void setup()
   STEP(6, "splash");
 
   store_begin();
+  backlight_set(BRIGHT);
   STEP(7, "store");
 
 #if USE_BOOT_RESET
@@ -88,10 +66,13 @@ void setup()
   log_begin();
   STEP(9, "log");
 
+  hw_begin();
+  STEP(10, "bedienteile");
+
 #if USE_NET
   net_begin();
 #endif
-  STEP(10, "net");
+  STEP(11, "net");
 
 #if SHOW_SPLASH
   while (millis() - splash_t0 < 3300) delay(20);
@@ -101,7 +82,7 @@ void setup()
 
   if (lvgl_lock(5000)) { ui_init(); lvgl_unlock(); }
   else Serial.println("[boot] WARNUNG: UI konnte nicht aufgebaut werden");
-  STEP(11, "ui bereit");
+  STEP(12, "ui bereit");
 
 #if HEAP_DEBUG
   Serial.printf("[heap] nach dem Start: frei %u, groesster Block %u\n",
@@ -114,32 +95,32 @@ void setup()
                 (unsigned long)log_count);
 }
 
-void loop()
+/* Wochenwechsel: einmal, sobald die Uhr steht, danach jede Minute */
+static bool week_sync_tick(void)
 {
-#if USE_NET
-  bool changed = net_tick();
-#else
-  bool changed = false;
-#endif
+  static uint32_t week_check  = 0;
+  static bool     week_synced = false;
 
-  if (!week_synced) {
-    if (time_valid) {
-      week_synced = true;
-      week_check  = millis();
-      if (week_tick(true)) { store_save_now(); changed = true; }
-    }
-  } else if (millis() - week_check > 60000UL) {
-    week_check = millis();
-    if (week_tick(true)) { store_save_now(); changed = true; }
-  }
+  if (!time_valid) return false;
+  if (week_synced && millis() - week_check < 60000UL) return false;
 
+  week_synced = true;
+  week_check  = millis();
+  if (!week_tick(true)) return false;
+  store_save_now();
+  return true;
+}
+
+/* Aenderungen aus Netz, Woche und Browser auf das Display bringen */
+static void ui_sync_tick(bool changed)
+{
   if (changed && lvgl_lock(200)) {
     ui_net_changed();
     lvgl_unlock();
   }
 
-  /* Aenderung kam ueber den Browser - Oberflaeche neu aufbauen */
 #if USE_NET
+  /* Aenderung kam ueber den Browser - Oberflaeche neu aufbauen */
   if (setup_applied && lvgl_lock(500)) {
     setup_applied = false;
     ui_init();
@@ -153,6 +134,19 @@ void loop()
     lvgl_unlock();
   }
 #endif
+}
+
+void loop()
+{
+  controls_tick();               /* zuerst: Tasten sollen sofort reagieren */
+
+#if USE_NET
+  bool changed = net_tick();
+#else
+  bool changed = false;
+#endif
+  changed |= week_sync_tick();
+  ui_sync_tick(changed);
 
   ui_reset_tick();               /* Werksreset ausserhalb des UI-Tasks */
 #if USE_NET
@@ -161,18 +155,17 @@ void loop()
 
   log_tick();
   ui_prefs_tick();
+  store_tick();
+
 #if HEAP_DEBUG
-  {
-    static uint32_t hlast = 0;
-    if (millis() - hlast > 5000) {
-      hlast = millis();
-      Serial.printf("[heap] frei %u, groesster Block %u\n",
-                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-    }
+  static uint32_t hlast = 0;
+  if (millis() - hlast > 5000) {
+    hlast = millis();
+    Serial.printf("[heap] frei %u, groesster Block %u\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   }
 #endif
 
-  store_tick();
   delay(20);
 }

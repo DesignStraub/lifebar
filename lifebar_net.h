@@ -5,6 +5,8 @@
 #include <time.h>
 #include <ESPmDNS.h>
 #include "esp_heap_caps.h"
+#include "lifebar_config.h"
+#include "lifebar_hw.h"
 #include "lifebar_model.h"
 #include "lifebar_log.h"
 #include "lifebar_page.h"
@@ -29,13 +31,6 @@
 #define TZ_RULE       "CET-1CEST,M3.5.0,M10.5.0/3"
 
 #define CONNECT_TIMEOUT  12000UL
-
-#ifndef USE_WEB
-#define USE_WEB 1
-#endif
-#ifndef USE_MDNS
-#define USE_MDNS 1
-#endif
 #define PORTAL_TIMEOUT   600000UL   /* 10 min ohne Einrichtung -> aus  */
 #define RESYNC_EVERY     43200000UL /* alle 12 h die Uhr nachstellen   */
 
@@ -62,6 +57,11 @@ static uint32_t  portal_started   = 0;
 static uint32_t  next_resync      = 0;
 static bool      web_started      = false;
 static bool      mdns_started     = false;
+
+/* Hotspot an/aus auf Anfrage der Oberflaeche. softAP schreibt die
+   Funkkonfiguration in den NVS - das gehoert nach loop(), nicht in
+   den UI-Task.                                                     */
+static volatile int8_t portal_req = -1;   /* -1 nichts, 0 aus, 1 an */
 
 /* ---- Zugangsdaten ---------------------------------------------------- */
 
@@ -295,6 +295,7 @@ static void handle_info(void)
   j += "\"seals\":"      + String(st.seals) + ",";
   j += "\"lang\":\""    + String(LANG_TAG[lang]) + "\",";
   j += "\"clock12\":"  + String(clock12 ? "true" : "false") + ",";
+  j += "\"screen\":"   + String(screen_on ? "true" : "false") + ",";
   j += "\"class\":\""   + String(current_class()) + "\",";
 
   /* Echte Summen aus dem NVS - das Log kennt nur, was seit seiner
@@ -780,6 +781,15 @@ static void handle_book(void)
   web.send(200, "text/plain", "ok");
 }
 
+/* Bildschirm schalten: /screen?on=0 oder /screen?on=1, ohne Argument
+   umschalten. Ausgefuehrt wird in loop().                          */
+static void handle_screen(void)
+{
+  bool want = web.hasArg("on") ? (web.arg("on").toInt() != 0) : !screen_on;
+  screen_req = want ? 1 : 0;
+  web.send(200, "text/plain", want ? "on" : "off");
+}
+
 static void handle_notfound(void)
 {
   /* Alles auf die Startseite - so erkennt das Handy das Captive Portal */
@@ -817,6 +827,7 @@ static void net_start_web(void)
   web.on("/add",    HTTP_POST, handle_add_post);
   web.on("/book",   handle_book);
   web.on("/info",   handle_info);
+  web.on("/screen", handle_screen);
   web.onNotFound(handle_notfound);
   web.begin();
   web_started = true;
@@ -897,6 +908,12 @@ static bool net_tick(void)
 {
   static uint8_t last      = 0xFF;
   static bool    last_time = false;
+
+  if (portal_req >= 0) {
+    bool on    = portal_req;
+    portal_req = -1;
+    if (on) net_start_portal(); else net_stop_portal();
+  }
 
 #if USE_WEB
   if (portal_up) dns.processNextRequest();

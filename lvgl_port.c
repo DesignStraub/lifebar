@@ -122,8 +122,10 @@ static void TouchInputReadCallback(lv_indev_t * indev, lv_indev_data_t *indevDat
 {
   uint8_t read_touchpad_cmd[11] = {0xb5, 0xab, 0xa5, 0x5a, 0x0, 0x0, 0x0, 0x0e,0x0, 0x0, 0x0};
   uint8_t buff[32] = {0};
-  esp_err_t _terr = i2c_master_write_read_dev(disp_touch_dev_handle,
-                                              read_touchpad_cmd, 11, buff, 32);
+  /* Touch haengt an I2C 1. Die Waveshare-Funktion wartete auf Bus 0,
+     wo jetzt auch der IO-Expander arbeitet.                        */
+  esp_err_t _terr = i2c_master_touch_write_read(disp_touch_dev_handle,
+                                                read_touchpad_cmd, 11, buff, 32);
 
   /* Diagnose aus einem zweiten Task in dieselbe serielle Schnittstelle
      zu schreiben ist riskant - nur einschalten, wenn gebraucht.    */
@@ -222,15 +224,16 @@ void lvgl_port_init(void)
 {
   flush_done_semaphore = xSemaphoreCreateBinary();
   assert(flush_done_semaphore);
-  ESP_LOGI(TAG, "Initialize LCD RESET GPIO");
-
+  /* V2: Backlight waehrend Reset und Init aus, damit kein Pixelmuell
+     aufblitzt. GPIO 42 auf LOW heisst volle Helligkeit, sobald BL_EN
+     wieder kommt - die Stufe setzt danach backlight_begin().       */
   gpio_config_t gpio_conf = {};
     gpio_conf.intr_type = GPIO_INTR_DISABLE;
     gpio_conf.mode = GPIO_MODE_OUTPUT;
-    gpio_conf.pin_bit_mask = ((uint64_t)0X01<<EXAMPLE_PIN_NUM_LCD_RST);
-    gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    gpio_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_conf.pin_bit_mask = ((uint64_t)0X01<<EXAMPLE_PIN_NUM_BK_LIGHT);
   ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_config(&gpio_conf));
+  gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, 0);
+  exio_set(EXIO_PIN_BL_EN, false);
 
   ESP_LOGI(TAG, "Initialize QSPI bus");
   spi_bus_config_t buscfg = {};
@@ -273,13 +276,18 @@ void lvgl_port_init(void)
   ESP_LOGI(TAG, "Install panel driver");
   ESP_ERROR_CHECK(esp_lcd_new_panel_axs15231b(panel_io, &panel_config, &panel));
     
-	ESP_ERROR_CHECK(gpio_set_level(EXAMPLE_PIN_NUM_LCD_RST,1));
+  /* Reset ueber den IO-Expander (V2). Frueher wurde hier GPIO 21
+     gepulst - auf V2 ist das der TE-Ausgang des Panels, der Reset kam
+     nie an und zwei Ausgaenge arbeiteten gegeneinander.            */
+  if (exio_set(EXIO_PIN_LCD_RST, true) != ESP_OK)
+    ESP_LOGW(TAG, "IO-Expander antwortet nicht - Panel ohne Reset");
   vTaskDelay(pdMS_TO_TICKS(30));
-  ESP_ERROR_CHECK(gpio_set_level(EXAMPLE_PIN_NUM_LCD_RST,0));
+  exio_set(EXIO_PIN_LCD_RST, false);
   vTaskDelay(pdMS_TO_TICKS(250));
-  ESP_ERROR_CHECK(gpio_set_level(EXAMPLE_PIN_NUM_LCD_RST,1));
+  exio_set(EXIO_PIN_LCD_RST, true);
   vTaskDelay(pdMS_TO_TICKS(30));
   ESP_ERROR_CHECK(esp_lcd_panel_init(panel));
+  exio_set(EXIO_PIN_BL_EN, true);
 
   lv_init();
 

@@ -114,7 +114,7 @@ typedef struct {
 typedef struct {
   uint8_t  version;              /* aktuell 6                           */
   uint8_t  configured;
-  uint8_t  brightness;           /* ungenutzt, haelt das Format stabil  */
+  uint8_t  brightness;           /* Stufe 0..3, 0 = hellste             */
   uint8_t  net_skipped;
 
   uint8_t  slot[MOD_COUNT];
@@ -660,6 +660,14 @@ static void store_mark_dirty(void)
 {
   store_dirty  = true;
   store_marked = millis();
+}
+
+/* Beim naechsten store_tick() schreiben, ohne die Ruhezeit abzuwarten.
+   Fuer den UI-Task: der darf selbst nie in den Flash schreiben.     */
+static void store_save_soon(void)
+{
+  store_dirty  = true;
+  store_marked = millis() - SAVE_DELAY;
 }
 
 /* Aus loop() aufrufen. */

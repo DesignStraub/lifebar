@@ -4,16 +4,20 @@
 #include "lifebar_model.h"
 #include "lifebar_net.h"
 #include "lifebar_log.h"
-#include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
+#include "lifebar_hw.h"
 
 /* =====================================================================
-   LifeBar - UI  (V2)
+   LifeBar - UI
    Logische Flaeche nach der 90-Grad-Softwarerotation: 640 x 172
 
-   Hauptseite : Tap = +0,5 h, langer Druck = -0,5 h
-                Wischen nach oben  -> Statistik
-   Statistik  : Wischen nach unten -> zurueck
-   Wizard     : nur beim allerersten Start
+   Hauptseite   : Tap waehlt eine Spalte, die Flaechen unten buchen
+                  links/rechts  -> Skills <-> Laster
+                  nach unten    -> Wochenrueckblick -> Einstellungen
+                  nach oben     -> Lockscreen
+   Wizard       : beim ersten Start und zum Bearbeiten der Auswahl
+
+   Alles hier laeuft im LVGL-Task. Flash, Funk und Hardware werden nur
+   ueber Flags angestossen und in loop() erledigt.
    ===================================================================== */
 
 #define SCR_W     640
@@ -105,9 +109,7 @@ static uint32_t gesture_block = 0;
 
 /* ---- Nachtmodus ------------------------------------------------------
    Zwischen 18 und 5 Uhr werden alle Farben waermer: Blau deutlich
-   runter, Gruen leicht, Rot bleibt. Gleiche Wirkung wie Night Shift -
-   und der einzige Weg hier, weil die Backlight-PWM auf V2 ins Leere
-   greift.                                                            */
+   runter, Gruen leicht, Rot bleibt. Gleiche Wirkung wie Night Shift. */
 #define NIGHT_FROM  18
 #define NIGHT_TO     5
 
@@ -132,7 +134,7 @@ static void ui_prefs_tick(void)
 static bool night_now = false;   /* gerade wirksam                    */
 
 /* Farben haengen an den Objekten, nicht am Zustand. Nach einer
-   Aenderung von Nachtmodus oder Helligkeit muss die Seite neu
+   Aenderung des Nachtmodus oder der Sprache muss die Seite neu
    gebaut werden - main_refresh() setzt nur Texte.                  */
 static bool theme_dirty = false;
 
@@ -185,20 +187,16 @@ static bool night_check(void)
 #define NIGHT_KEEP  30
 #define NIGHT_DIM   85
 
-/* Helligkeit. Die Backlight-PWM liegt auf V2 auf einem anderen IO als
-   im Demo-Code, deshalb ueber die Farben. Stufe steht in
-   st.brightness - das Feld war ohnehin ungenutzt.                   */
-static const uint8_t BRIGHT_PCT[4] = { 100, 78, 58, 40 };
+/* Helligkeit: echte Backlight-Stufen, siehe lifebar_hw.h. Die Stufe
+   steht in st.brightness, 0 = hellste.                              */
+static const uint8_t BRIGHT_PCT[4] = { 100, 60, 35, 15 };
 #define BRIGHT (BRIGHT_PCT[st.brightness & 3])
 
 static lv_color_t C(uint32_t c)
 {
   uint32_t r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
 
-  if (!night_now) {
-    uint32_t p = BRIGHT;
-    return lv_color_make(r * p / 100, g * p / 100, b * p / 100);
-  }
+  if (!night_now) return lv_color_make(r, g, b);
 
   /* Bezug ist der hellste Kanal, nicht die Leuchtdichte: sonst wird
      ein gesaettigtes Blau zu dunklem Matsch statt zu warmem Licht. */
@@ -211,8 +209,8 @@ static lv_color_t C(uint32_t c)
   g = (ag * m + g * k) / 100;
   b = (ab * m + b * k) / 100;
 
-  uint32_t d = (uint32_t)NIGHT_DIM * BRIGHT / 100;
-  return lv_color_make(r * d / 100, g * d / 100, b * d / 100);
+  return lv_color_make(r * NIGHT_DIM / 100, g * NIGHT_DIM / 100,
+                       b * NIGHT_DIM / 100);
 }
 
 static lv_coord_t press_x = -1;
@@ -307,6 +305,7 @@ static uint32_t dim_color(uint32_t c)
 
 static void main_refresh(void);
 static void settings_show(void);
+static void settings_refresh(void);
 static void ui_build_main(void);
 static void ui_build_net(void);
 static void ui_init(void);
@@ -332,11 +331,66 @@ static void fmt_h(char *buf, size_t n, uint32_t min)
            (min % 60) ? '5' : '0');
 }
 
-/* ---- Helligkeit ------------------------------------------------------ */
+/* =====================================================================
+   Seiten anlegen und entsorgen
+   ===================================================================== */
 
-/* Helligkeitssteuerung ist raus: auf V2 liegt LCD_BL an einem anderen
-   IO als im Demo-Code, die PWM greift dort ins Leere. Das Feld
-   st.brightness bleibt im Struct, damit das NVS-Format stabil ist. */
+/* Alte Seiten erst loeschen, wenn LVGL sie nicht mehr braucht.
+
+   LVGL 9.3 raeumt beim Loeschen eines Screens die Zeiger des Displays
+   nicht auf. Wird eine Seite geloescht, die gerade angezeigt oder aus
+   dem Bild animiert wird, gibt es danach entweder keinen aktiven
+   Screen mehr - der naechste Touch liest dann ueber einen Nullzeiger -
+   oder die Animation zeichnet ein bereits freigegebenes Objekt.
+   Genau das passierte beim Antippen von +/- in den Einstellungen,
+   am zuverlaessigsten beim Durchtippen der Helligkeit.
+
+   Deshalb: nicht sofort loeschen, sondern nachsehen und notfalls
+   spaeter noch einmal.                                              */
+#define RETIRE_MS 300
+
+static void retire_timer_cb(lv_timer_t *t)
+{
+  lv_obj_t     *o = (lv_obj_t *)lv_timer_get_user_data(t);
+  lv_display_t *d = lv_obj_get_display(o);
+  if (o == lv_display_get_screen_active(d) ||
+      o == lv_display_get_screen_prev(d)) return;   /* noch in Gebrauch */
+  lv_timer_delete(t);
+  lv_obj_delete(o);
+}
+
+static void scr_retire(lv_obj_t *old)
+{
+  if (old) lv_timer_create(retire_timer_cb, RETIRE_MS, old);
+}
+
+/* Leere Vollbildseite im Grundstil */
+static lv_obj_t *new_screen(void)
+{
+  lv_obj_t *sc = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(sc, C(COL_SCR), 0);
+  lv_obj_set_style_pad_all(sc, 0, 0);
+  lv_obj_set_style_border_width(sc, 0, 0);
+  lv_obj_remove_flag(sc, LV_OBJ_FLAG_SCROLLABLE);
+  return sc;
+}
+
+/* Label mit Farbe und optional eigener Schrift */
+static lv_obj_t *mk_label(lv_obj_t *par, uint32_t col,
+                          const lv_font_t *font = NULL)
+{
+  lv_obj_t *l = lv_label_create(par);
+  lv_obj_set_style_text_color(l, C(col), 0);
+  if (font) lv_obj_set_style_text_font(l, font, 0);
+  return l;
+}
+
+/* Funktionszeiger fuer lv_async_call: Seitenwechsel nie direkt aus
+   dem Callback eines Buttons der aktiven Seite heraus.             */
+static void rebuild_async(void *fn)
+{
+  ((void (*)(void))fn)();
+}
 
 /* =====================================================================
    Vollbildmeldungen (Start, Neustart)
@@ -344,45 +398,25 @@ static void fmt_h(char *buf, size_t n, uint32_t min)
 
 static lv_obj_t *scr_msg = NULL;
 
-/* Objekte nie aus ihrem eigenen Event-Callback loeschen - LVGL
-   arbeitet danach noch damit. lv_async_call verschiebt das ans Ende
-   des Verarbeitungszyklus.                                          */
-static void del_async(void *obj)
-{
-  lv_obj_delete((lv_obj_t *)obj);
-}
-
-static void rebuild_async(void *fn)
-{
-  ((void (*)(void))fn)();
-}
-
 static void ui_message(const char *big, const char *small, uint32_t col)
 {
   lv_obj_t *old = scr_msg;
-  scr_msg = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_msg, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_msg, 0, 0);
-  lv_obj_set_style_border_width(scr_msg, 0, 0);
-  lv_obj_remove_flag(scr_msg, LV_OBJ_FLAG_SCROLLABLE);
+  scr_msg = new_screen();
 
-  lv_obj_t *t = lv_label_create(scr_msg);
   /* Lange Titel passen in 48 px nicht auf 640 px Breite */
-  lv_obj_set_style_text_font(t,
-      (strlen(big) > 12) ? LB_FONT_BIG : LB_FONT_HUGE, 0);
-  lv_obj_set_style_text_color(t, C(col), 0);
+  lv_obj_t *t = mk_label(scr_msg, col,
+                         (strlen(big) > 12) ? LB_FONT_BIG : LB_FONT_HUGE);
   lv_obj_align(t, LV_ALIGN_CENTER, 0, small ? -18 : 0);
   lv_label_set_text(t, big);
 
   if (small) {
-    lv_obj_t *u = lv_label_create(scr_msg);
-    lv_obj_set_style_text_color(u, C(COL_DIM), 0);
+    lv_obj_t *u = mk_label(scr_msg, COL_DIM);
     lv_obj_align(u, LV_ALIGN_CENTER, 0, 26);
     lv_label_set_text(u, small);
   }
 
   lv_screen_load(scr_msg);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 /* Startbild. Wird vor der Initialisierung gezeigt, damit die ersten
@@ -458,6 +492,11 @@ static void refresh_selection(void)
 
 static void main_refresh(void)
 {
+  /* Beim allerersten Start gibt es die Hauptseite noch nicht, der
+     Netzstatus meldet sich aber schon - vorher lief das hier ueber
+     Nullzeiger.                                                    */
+  if (!scr_main) return;
+
   uint16_t lvl;
   uint32_t have, need;
   level_from_total(total_min, &lvl, &have, &need);
@@ -491,13 +530,12 @@ static void col_event_cb(lv_event_t *e)
   refresh_selection();
 }
 
-/* Buchen. dir = +1 oder -1 */
-static void act_cb(lv_event_t *e)
+/* Ausgewaehlte Spalte buchen, dir = +1 oder -1. Gerufen vom Touch und
+   vom Drehknopf, in beiden Faellen mit gehaltenem LVGL-Mutex.      */
+static void book_selected(int dir)
 {
-  int dir = (int)(intptr_t)lv_event_get_user_data(e);
-  int i   = sel_idx;
+  int i = sel_idx;
   if (i < 0 || !view_active(i)) return;
-  if (lv_tick_get() - press_t < MIN_PRESS_MS) return;
 
   if (view_bad) {
     if (dir > 0) {
@@ -544,6 +582,12 @@ static void act_cb(lv_event_t *e)
                rarity_color(current_level()));
     lv_timer_create(back_main_timer_cb, 2600, NULL);
   }
+}
+
+static void act_cb(lv_event_t *e)
+{
+  if (lv_tick_get() - press_t < MIN_PRESS_MS) return;
+  book_selected((int)(intptr_t)lv_event_get_user_data(e));
 }
 
 /* Rueckweg von einer Unterseite: nur die Gegenrichtung, und nur von
@@ -619,11 +663,7 @@ static void main_gesture_cb(lv_event_t *e)
 static void ui_build_main(void)
 {
   lv_obj_t *old = scr_main;
-  scr_main = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_main, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_main, 0, 0);
-  lv_obj_set_style_border_width(scr_main, 0, 0);
-  lv_obj_remove_flag(scr_main, LV_OBJ_FLAG_SCROLLABLE);
+  scr_main = new_screen();
   lv_obj_add_event_cb(scr_main, main_gesture_cb, LV_EVENT_GESTURE, NULL);
   lv_obj_add_event_cb(scr_main, press_cb, LV_EVENT_PRESSED, NULL);
 
@@ -776,7 +816,7 @@ static void ui_build_main(void)
   theme_dirty = false;
   last_touch  = lv_tick_get();
   lv_screen_load(scr_main);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 static void goal_cb(lv_event_t *e)
@@ -787,7 +827,7 @@ static void goal_cb(lv_event_t *e)
   if (g > 4200) g = 4200;          /* 70 h, mehr ist nicht plausibel */
   st.week_goal = (uint16_t)g;
   store_mark_dirty();
-  lv_async_call(rebuild_async, (void *)settings_show);
+  lv_async_call(rebuild_async, (void *)settings_refresh);
 }
 
 /* Kleiner Helfer, damit alle Buttons gleich aussehen */
@@ -830,36 +870,17 @@ static void back_main_timer_cb(lv_timer_t *t)
                                     250, 0, false);
 }
 
-static void restart_timer_cb(lv_timer_t *t)
-{
-  lv_timer_delete(t);
-  ESP.restart();
-}
-
-/* Vollbildmeldung, Daten sichern, danach neu starten.
-   reason darf NULL sein.                                            */
-static void ui_restart(const char *reason)
-{
-  /* Schreiben uebernimmt loop() in der Sekunde bis zum Neustart */
-  store_mark_dirty();
-  ui_message(T(S_RESTART), reason, COL_HIT);
-  lv_timer_create(restart_timer_cb, 1200, NULL);
-}
-
-/* Der Nachtmodus faerbt alles beim Zeichnen ein. Ein Neustart ist der
-   ehrlichste Weg, ihn ueberall wirken zu lassen - sonst behalten die
-   nicht sichtbaren Seiten ihre alten Farben.                        */
+/* Sprache und Nachtmodus aendern Texte bzw. Farben aller Seiten.
+   Die Hauptseite wird NICHT hier neu gebaut - theme_dirty sorgt
+   dafuer, dass sie beim Zurueckgehen neu entsteht. Die uebrigen
+   Seiten werden bei jedem Aufruf ohnehin frisch gebaut.           */
 static void lang_cb(lv_event_t *e)
 {
   LV_UNUSED(e);
   lang        = (lang + 1) % LANG_COUNT;
   prefs_dirty = true;
-  /* Hauptseite NICHT hier neu bauen - ein Screenwechsel aus dem
-     Callback eines Buttons der aktiven Seite heraus ist fragil.
-     theme_dirty sorgt dafuer, dass sie beim Zurueckgehen neu
-     entsteht, also mit den neuen Texten.                          */
   theme_dirty = true;
-  lv_async_call(rebuild_async, (void *)settings_show);
+  lv_async_call(rebuild_async, (void *)settings_refresh);
 }
 
 static void fmt_cb(lv_event_t *e)
@@ -867,19 +888,23 @@ static void fmt_cb(lv_event_t *e)
   LV_UNUSED(e);
   clock12 = !clock12;
   prefs_dirty = true;
-  lv_async_call(rebuild_async, (void *)settings_show);
+  lv_async_call(rebuild_async, (void *)settings_refresh);
 }
 
+/* Frueher mit Neustart, weil sonst nicht sichtbare Seiten ihre alten
+   Farben behielten. theme_dirty erledigt das ohne.                 */
 static void night_cb(lv_event_t *e)
 {
   LV_UNUSED(e);
-  night_on = !night_on;
+  night_on    = !night_on;
+  night_now   = night_check();
   prefs_dirty = true;
-
-  night_now = night_check();
-  ui_restart(night_on ? T(S_NIGHT_ON) : T(S_NIGHT_OFF));
+  theme_dirty = true;
+  lv_async_call(rebuild_async, (void *)settings_refresh);
 }
 
+/* Helligkeit ist jetzt das echte Backlight, an den Farben aendert sich
+   nichts. Ein LEDC-Registerzugriff, kein Flash - darf hier stehen. */
 static void bright_cb(lv_event_t *e)
 {
   int d = (int)(intptr_t)lv_event_get_user_data(e);
@@ -887,23 +912,20 @@ static void bright_cb(lv_event_t *e)
   if (v < 0) v = 0;
   if (v > 3) v = 3;
   st.brightness = (uint8_t)v;
-  theme_dirty   = true;
+  backlight_set(BRIGHT);
   store_mark_dirty();
-  lv_async_call(rebuild_async, (void *)settings_show);
+  lv_async_call(rebuild_async, (void *)settings_refresh);
 }
 
 /* Eine Zeile Einstellung: Beschriftung, Wert, zwei Tasten. */
 static void set_row(lv_obj_t *par, int x, int y, const char *label,
                     const char *value, lv_event_cb_t cb)
 {
-  lv_obj_t *l = lv_label_create(par);
-  lv_obj_set_style_text_color(l, C(COL_DIM), 0);
+  lv_obj_t *l = mk_label(par, COL_DIM);
   lv_obj_set_pos(l, x, y + 8);
   lv_label_set_text(l, label);
 
-  lv_obj_t *v = lv_label_create(par);
-  lv_obj_set_style_text_font(v, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(v, C(COL_TEXT), 0);
+  lv_obj_t *v = mk_label(par, COL_TEXT, LB_FONT_BIG);
   lv_obj_set_pos(v, x + 118, y + 4);
   lv_label_set_text(v, value);
 
@@ -937,15 +959,9 @@ static void ui_ask(int kind)
   ask_kind = kind;
 
   lv_obj_t *old = scr_ask;
-  scr_ask = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_ask, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_ask, 0, 0);
-  lv_obj_set_style_border_width(scr_ask, 0, 0);
-  lv_obj_remove_flag(scr_ask, LV_OBJ_FLAG_SCROLLABLE);
+  scr_ask = new_screen();
 
-  lv_obj_t *t = lv_label_create(scr_ask);
-  lv_obj_set_style_text_font(t, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(t, C(COL_WARN), 0);
+  lv_obj_t *t = mk_label(scr_ask, COL_WARN, LB_FONT_BIG);
   lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(t, SCR_W - 48);
   lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
@@ -958,18 +974,19 @@ static void ui_ask(int kind)
        0x7A1F1F, COL_WARN, COL_TEXT, ask_yes_cb, NULL);
 
   lv_screen_load(scr_ask);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
-static void settings_show(void)
+/* anim = false: Neuaufbau nach einer Aenderung auf der Seite selbst.
+   Dann ohne Animation - die neue Seite ist sofort aktiv, die alte
+   geht per scr_retire() in Ruhe weg.                               */
+static void settings_build(bool anim)
 {
   lv_obj_t *sc = sub_screen(&scr_stats, LV_DIR_TOP);
   back_screen = scr_week;        /* eine Ebene zurueck, nicht ganz raus */
   char buf[16];
 
-  lv_obj_t *head = lv_label_create(sc);
-  lv_obj_set_style_text_font(head, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(head, C(COL_TEXT), 0);
+  lv_obj_t *head = mk_label(sc, COL_TEXT, LB_FONT_BIG);
   lv_obj_set_pos(head, 24, 4);
   lv_label_set_text(head, T(S_SETTINGS));
 
@@ -985,16 +1002,14 @@ static void settings_show(void)
   fmt_hour(h1, sizeof(h1), NIGHT_FROM);
   fmt_hour(h2, sizeof(h2), NIGHT_TO);
 
-  lv_obj_t *nl = lv_label_create(sc);
-  lv_obj_set_style_text_color(nl, C(COL_DIM), 0);
+  lv_obj_t *nl = mk_label(sc, COL_DIM);
   lv_obj_set_pos(nl, 330, 44);
   lv_label_set_text_fmt(nl, "%s %s-%s", T(S_NIGHTMODE), h1, h2);
 
   sbtn(sc, 548, 36, 68, night_on ? T(S_ON) : T(S_OFF),
        night_on ? COL_HIT : COL_CARD, COL_HIT, COL_TEXT, night_cb, NULL);
 
-  lv_obj_t *ll = lv_label_create(sc);
-  lv_obj_set_style_text_color(ll, C(COL_DIM), 0);
+  lv_obj_t *ll = mk_label(sc, COL_DIM);
   lv_obj_set_pos(ll, 330, 78);
   lv_label_set_text(ll, T(S_LANGUAGE));
 
@@ -1017,8 +1032,12 @@ static void settings_show(void)
        [](lv_event_t *e) { LV_UNUSED(e);
          lv_async_call(rebuild_async, (void *)ui_ask_reset); }, NULL);
 
-  lv_screen_load_anim(sc, back_anim, ANIM_MS, 0, false);
+  if (anim) lv_screen_load_anim(sc, back_anim, ANIM_MS, 0, false);
+  else      lv_screen_load(sc);
 }
+
+static void settings_show(void)    { settings_build(true);  }
+static void settings_refresh(void) { settings_build(false); }
 
 /* =====================================================================
    Wizard
@@ -1104,13 +1123,13 @@ static void wiz_next_cb(lv_event_t *e)
 
   st.configured = 1;
   recalc_total();
-  store_save_now();
+  store_save_soon();                 /* schreibt loop(), nicht der UI-Task */
 
   lv_obj_t *old = scr_wizard;
   scr_wizard = NULL;
   if (wiz_mode == 0 && !net_has_creds() && !st.net_skipped) ui_build_net();
   else                                                      ui_build_main();
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 /* mode: 0 = Ersteinrichtung, 1 = nur Skills, 2 = nur Laster.
@@ -1135,14 +1154,9 @@ static void wizard_open(int mode)
 static void ui_build_wizard(void)
 {
   lv_obj_t *old = scr_wizard;
-  scr_wizard = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_wizard, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_wizard, 0, 0);
-  lv_obj_set_style_border_width(scr_wizard, 0, 0);
-  lv_obj_remove_flag(scr_wizard, LV_OBJ_FLAG_SCROLLABLE);
+  scr_wizard = new_screen();
 
-  wiz_head = lv_label_create(scr_wizard);
-  lv_obj_set_style_text_color(wiz_head, C(COL_TEXT), 0);
+  wiz_head = mk_label(scr_wizard, COL_TEXT);
   lv_obj_set_pos(wiz_head, 20, 4);
 
   lv_obj_t *nb = lv_button_create(scr_wizard);
@@ -1178,7 +1192,7 @@ static void ui_build_wizard(void)
     }
     wiz_title();
     lv_screen_load(scr_wizard);
-    if (old) lv_async_call(del_async, old);
+    scr_retire(old);
     return;
   }
 
@@ -1217,7 +1231,7 @@ static void ui_build_wizard(void)
 
   wiz_title();
   lv_screen_load(scr_wizard);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 /* =====================================================================
@@ -1228,53 +1242,43 @@ static void ui_build_wizard(void)
 static void net_skip_cb(lv_event_t *e)
 {
   LV_UNUSED(e);
-  net_stop_portal();
-  st.net_skipped = 1;              /* Einrichtung uebersprungen */
-  store_save_now();
+  portal_req     = 0;              /* Hotspot schliesst loop()          */
+  st.net_skipped = 1;              /* Einrichtung uebersprungen         */
+  store_save_soon();
   ui_build_main();
 }
 
 static void ui_build_net(void)
 {
-  net_start_portal();
+  /* Den Hotspot startet loop(). Den Namen kennen wir trotzdem schon -
+     er kommt aus der MAC-Adresse, dafuer muss kein Funk laufen.    */
+  net_make_ap_name();
+  portal_req = 1;
 
   lv_obj_t *old = scr_net;
-  scr_net = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_net, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_net, 0, 0);
-  lv_obj_set_style_border_width(scr_net, 0, 0);
-  lv_obj_remove_flag(scr_net, LV_OBJ_FLAG_SCROLLABLE);
+  scr_net = new_screen();
 
-  lv_obj_t *t = lv_label_create(scr_net);
-  lv_obj_set_style_text_font(t, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(t, C(COL_TEXT), 0);
+  lv_obj_t *t = mk_label(scr_net, COL_TEXT, LB_FONT_BIG);
   lv_obj_set_pos(t, 20, 8);
   lv_label_set_text(t, T(S_WIFI_SETUP));
 
-  lv_obj_t *s1 = lv_label_create(scr_net);
-  lv_obj_set_style_text_color(s1, C(COL_DIM), 0);
+  lv_obj_t *s1 = mk_label(scr_net, COL_DIM);
   lv_obj_set_pos(s1, 20, 42);
   lv_label_set_text(s1, T(S_STEP1));
 
-  lv_obj_t *ap = lv_label_create(scr_net);
-  lv_obj_set_style_text_font(ap, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(ap, C(COL_HIT), 0);
+  lv_obj_t *ap = mk_label(scr_net, COL_HIT, LB_FONT_BIG);
   lv_obj_set_pos(ap, 20, 64);
   lv_label_set_text(ap, ap_ssid);
 
-  lv_obj_t *s2 = lv_label_create(scr_net);
-  lv_obj_set_style_text_color(s2, C(COL_DIM), 0);
+  lv_obj_t *s2 = mk_label(scr_net, COL_DIM);
   lv_obj_set_pos(s2, 20, 94);
-  lv_label_set_text(s2,
-    T(S_STEP2));
+  lv_label_set_text(s2, T(S_STEP2));
 
-  lv_obj_t *s3 = lv_label_create(scr_net);
-  lv_obj_set_style_text_color(s3, C(COL_DIM), 0);
+  lv_obj_t *s3 = mk_label(scr_net, COL_DIM);
   lv_obj_set_pos(s3, 20, 114);
   lv_label_set_text(s3, T(S_STEP3));
 
-  net_status = lv_label_create(scr_net);
-  lv_obj_set_style_text_color(net_status, C(COL_DIM), 0);
+  net_status = mk_label(scr_net, COL_DIM);
   lv_obj_align(net_status, LV_ALIGN_BOTTOM_LEFT, 20, -8);
   lv_label_set_text(net_status, net_state_text());
 
@@ -1291,16 +1295,17 @@ static void ui_build_net(void)
   lv_obj_center(sl);
 
   lv_screen_load(scr_net);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 /* Wird aus loop() gerufen, wenn sich der Netzzustand geaendert hat.  */
 static void ui_net_changed(void)
 {
   if (lv_screen_active() == scr_net) {
-    /* verbunden oder Portal ausgelaufen -> zurueck auf die Hauptseite */
+    /* verbunden oder Portal ausgelaufen -> zurueck auf die Hauptseite.
+       Ein angefragter, noch nicht gestarteter Hotspot zaehlt als offen. */
     if (net_state == NET_ONLINE ||
-        (!portal_up && net_state != NET_CONNECTING)) {
+        (!portal_up && portal_req != 1 && net_state != NET_CONNECTING)) {
       ui_build_main();
       return;
     }
@@ -1342,11 +1347,7 @@ static void clock_refresh(void)
 static lv_obj_t *sub_screen(lv_obj_t **slot, lv_dir_t back)
 {
   lv_obj_t *old = *slot;
-  lv_obj_t *sc  = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(sc, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(sc, 0, 0);
-  lv_obj_set_style_border_width(sc, 0, 0);
-  lv_obj_remove_flag(sc, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *sc  = new_screen();
   lv_obj_add_event_cb(sc, back_gesture_cb, LV_EVENT_GESTURE, NULL);
   lv_obj_add_event_cb(sc, press_cb, LV_EVENT_PRESSED, NULL);
 
@@ -1368,7 +1369,7 @@ static lv_obj_t *sub_screen(lv_obj_t **slot, lv_dir_t back)
   }
 
   *slot = sc;
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
   return sc;
 }
 
@@ -1397,22 +1398,15 @@ static void ui_build_lock(void)
   sel_idx = -1;
 
   lv_obj_t *old = scr_clock;
-  scr_clock = lv_obj_create(NULL);
-  lv_obj_set_style_bg_color(scr_clock, C(COL_SCR), 0);
-  lv_obj_set_style_pad_all(scr_clock, 0, 0);
-  lv_obj_set_style_border_width(scr_clock, 0, 0);
-  lv_obj_remove_flag(scr_clock, LV_OBJ_FLAG_SCROLLABLE);
+  scr_clock = new_screen();
   lv_obj_add_flag(scr_clock, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(scr_clock, lock_press_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_add_event_cb(scr_clock, press_cb, LV_EVENT_PRESSED, NULL);
 
-  clock_time = lv_label_create(scr_clock);
-  lv_obj_set_style_text_font(clock_time, LB_FONT_HUGE, 0);
-  lv_obj_set_style_text_color(clock_time, C(COL_TEXT), 0);
+  clock_time = mk_label(scr_clock, COL_TEXT, LB_FONT_HUGE);
   lv_obj_align(clock_time, LV_ALIGN_LEFT_MID, 28, -10);
 
-  clock_day = lv_label_create(scr_clock);
-  lv_obj_set_style_text_color(clock_day, C(COL_DIM), 0);
+  clock_day = mk_label(scr_clock, COL_DIM);
   lv_obj_align(clock_day, LV_ALIGN_LEFT_MID, 30, 28);
 
   uint16_t lvl;
@@ -1420,27 +1414,22 @@ static void ui_build_lock(void)
   level_from_total(total_min, &lvl, &have, &need);
   uint32_t rc = rarity_color(lvl);
 
-  lv_obj_t *ll = lv_label_create(scr_clock);
-  lv_obj_set_style_text_font(ll, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(ll, C(rc), 0);
+  lv_obj_t *ll = mk_label(scr_clock, rc, LB_FONT_BIG);
   lv_obj_align(ll, LV_ALIGN_RIGHT_MID, -28, -24);
   lv_label_set_text_fmt(ll, "LVL %u", lvl);
 
-  lv_obj_t *tl = lv_label_create(scr_clock);
-  lv_obj_set_style_text_font(tl, LB_FONT_BIG, 0);
-  lv_obj_set_style_text_color(tl, C(rc), 0);
+  lv_obj_t *tl = mk_label(scr_clock, rc, LB_FONT_BIG);
   lv_obj_align(tl, LV_ALIGN_RIGHT_MID, -28, 2);
   lv_label_set_text(tl, current_class());
 
-  lv_obj_t *xl = lv_label_create(scr_clock);
-  lv_obj_set_style_text_color(xl, C(COL_DIM), 0);
+  lv_obj_t *xl = mk_label(scr_clock, COL_DIM);
   lv_obj_align(xl, LV_ALIGN_RIGHT_MID, -28, 28);
   lv_label_set_text_fmt(xl, "%lu / %lu EXP",
                         (unsigned long)have, (unsigned long)need);
 
   clock_refresh();
   lv_screen_load_anim(scr_clock, LV_SCR_LOAD_ANIM_MOVE_TOP, ANIM_MS, 0, false);
-  if (old) lv_async_call(del_async, old);
+  scr_retire(old);
 }
 
 /* =====================================================================
@@ -1592,17 +1581,98 @@ static void ui_build_week(void)
 }
 
 /* =====================================================================
+   Dunkler Bildschirm und Drehknopf
+   Beides wird aus loop() gerufen, mit gehaltenem LVGL-Mutex.
+   ===================================================================== */
+
+/* Solange der Bildschirm aus ist, liegt eine unsichtbare Flaeche auf
+   der obersten Ebene und faengt jede Beruehrung ab - sonst wuerde im
+   Dunkeln gebucht. Langer Druck weckt, damit das Geraet nie ohne
+   Taste im Dunkeln haengen bleibt.                                  */
+static lv_obj_t *dark_blocker = NULL;
+
+static void dark_wake_cb(lv_event_t *e)
+{
+  lv_indev_wait_release(lv_indev_active());
+  LV_UNUSED(e);
+  screen_req = 1;                  /* einschalten erledigt loop() */
+}
+
+static void ui_screen_dark(bool dark)
+{
+  if (dark) {
+    if (dark_blocker) return;
+    if (sel_idx >= 0) { sel_idx = -1; refresh_selection(); }
+    dark_blocker = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(dark_blocker);
+    lv_obj_set_size(dark_blocker, SCR_W, SCR_H);
+    lv_obj_add_flag(dark_blocker, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(dark_blocker, dark_wake_cb, LV_EVENT_LONG_PRESSED, NULL);
+    return;
+  }
+  if (!dark_blocker) return;
+  lv_obj_delete(dark_blocker);
+  dark_blocker = NULL;
+  last_touch   = lv_tick_get();    /* nicht sofort in den Lockscreen */
+}
+
+/* Darf der Abfangschirm weg? Erst wenn der Finger, der geweckt hat,
+   wieder oben ist - sonst landet sein Loslassen als Tap auf der Seite. */
+static bool ui_touch_released(void)
+{
+  lv_indev_t *ti = lv_indev_get_next(NULL);
+  return !ti || lv_indev_get_state(ti) == LV_INDEV_STATE_RELEASED;
+}
+
+/* Drehknopf: bucht, solange auf der Hauptseite eine Spalte ausgewaehlt
+   ist - jede Rastung ein Schritt, wie die Flaechen unten. Ohne
+   Auswahl gibt er false zurueck und regelt die Lautstaerke.         */
+static bool ui_knob_turn(int steps)
+{
+  if (locked || sel_idx < 0 || !scr_main || lv_screen_active() != scr_main)
+    return false;
+  int dir = steps > 0 ? 1 : -1;
+  /* Ein neuer Titel blendet eine Meldung ein - dann nicht weiterbuchen */
+  for (int n = abs(steps); n > 0 && lv_screen_active() == scr_main; n--)
+    book_selected(dir);
+  last_touch = lv_tick_get();
+  return true;
+}
+
+/* Druck auf den Knopf: hebt eine Auswahl auf. Ohne Auswahl false -
+   dann ist er Stummschalter.                                       */
+static bool ui_knob_press(void)
+{
+  if (sel_idx < 0 || lv_screen_active() != scr_main) return false;
+  sel_idx = -1;
+  refresh_selection();
+  last_touch = lv_tick_get();
+  return true;
+}
+
+/* =====================================================================
    Einstieg
    ===================================================================== */
 
 /* Laeuft im LVGL-Task: haelt die Uhr aktuell, ohne loop() zu belasten */
 #define IDLE_LOCK_MS 180000UL      /* 3 min ohne Beruehrung */
 
+/* Eine Auswahl haelt nur so lange ohne Beruehrung. Danach ist der
+   Drehknopf wieder Lautstaerkeregler und die Buchungsflaechen gehen
+   weg. Dreimal hintereinander buchen bleibt bequem moeglich.       */
+#define SEL_TIMEOUT_MS 15000UL
+
 static void ui_timer_cb(lv_timer_t *t)
 {
   LV_UNUSED(t);
 
   if (locked && scr_clock && lv_screen_active() == scr_clock) clock_refresh();
+
+  if (sel_idx >= 0 && (lv_tick_get() - last_touch) > SEL_TIMEOUT_MS &&
+      lv_screen_active() == scr_main) {
+    sel_idx = -1;
+    refresh_selection();
+  }
 
   /* Ueberall sperren, ausser wo der Nutzer gerade nebenbei etwas
      erledigt: Wizard und WLAN-Einrichtung bleiben stehen.           */
@@ -1645,7 +1715,11 @@ static void ui_init(void)
   night_now = night_check();
   UISTEP(3, "nachtmodus geprueft");
 
-  lv_timer_create(ui_timer_cb, 1000, NULL);
+  /* Nur einmal: ui_init() laeuft auch nach Werksreset und nach
+     Aenderungen aus dem Browser - frueher kam jedes Mal ein weiterer
+     Timer dazu.                                                    */
+  static lv_timer_t *ui_tmr = NULL;
+  if (!ui_tmr) ui_tmr = lv_timer_create(ui_timer_cb, 1000, NULL);
   UISTEP(4, "timer");
 
   if (!st.configured) {
